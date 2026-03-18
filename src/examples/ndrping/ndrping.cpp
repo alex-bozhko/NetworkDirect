@@ -15,10 +15,10 @@
 #include <logging.h>
 
 const USHORT x_DefaultPort = 54326;
-const SIZE_T x_MaxXfer = (4 * 1024 * 1024);
+const SIZE_T x_MaxXfer = (64 * 1024 * 1024);
 const SIZE_T x_HdrLen = 40;
 const SIZE_T x_MaxVolume = (500 * x_MaxXfer);
-const SIZE_T x_MaxIterations = 500000;
+const SIZE_T x_MaxIterations = 10000;
 
 const LPCWSTR TESTNAME = L"ndrping.exe";
 
@@ -62,6 +62,7 @@ public:
 
     void RunTest(const struct sockaddr_in& v4Src, DWORD queueDepth, DWORD /*nSge */)
     {
+        printf("[SERVER] Initializing adapter...\n");
         NdTestBase::Init(v4Src);
         ND2_ADAPTER_INFO adapterInfo = { 0 };
         NdTestBase::GetAdapterInfo(&adapterInfo);
@@ -71,12 +72,17 @@ public:
         {
             LOG_FAILURE_AND_EXIT(L"Adapter does not support in-order RDMA.", __LINE__);
         }
+        printf("[SERVER] AdapterInfo: MaxCQDepth=%lu, MaxRecvQDepth=%lu, MaxInboundReadLimit=%lu, Flags=0x%lx\n",
+            adapterInfo.MaxCompletionQueueDepth, adapterInfo.MaxReceiveQueueDepth,
+            adapterInfo.MaxInboundReadLimit, adapterInfo.AdapterFlags);
 
         m_maxIncomingReads = adapterInfo.MaxInboundReadLimit;
+        printf("[SERVER] Creating CQ, Connector, QP...\n");
         NdTestBase::CreateCQ(adapterInfo.MaxCompletionQueueDepth);
         NdTestBase::CreateConnector();
         NdTestBase::CreateQueuePair(min(adapterInfo.MaxCompletionQueueDepth, adapterInfo.MaxReceiveQueueDepth), 1);
 
+        printf("[SERVER] Creating MR, allocating buffer, registering (mode=%s)...\n", m_opRead ? "READ" : "WRITE");
         NdTestBase::CreateMR();
         m_pBuf = static_cast<char *>(HeapAlloc(GetProcessHeap(), 0, x_MaxXfer + x_HdrLen));
         if (!m_pBuf)
@@ -88,6 +94,8 @@ public:
             ND_MR_FLAG_ALLOW_LOCAL_WRITE | ND_MR_FLAG_ALLOW_REMOTE_READ :
             ND_MR_FLAG_ALLOW_LOCAL_WRITE | ND_MR_FLAG_ALLOW_REMOTE_WRITE;
         NdTestBase::RegisterDataBuffer(m_pBuf, x_MaxXfer + x_HdrLen, flags);
+        printf("[SERVER] MR registered: localToken=0x%x, remoteToken=0x%x\n",
+            m_pMr->GetLocalToken(), m_pMr->GetRemoteToken());
 
         // post reveive for the terminate message
         ND2_SGE sge = { 0 };
@@ -96,27 +104,37 @@ public:
         sge.MemoryRegionToken = m_pMr->GetLocalToken();
         NdTestBase::PostReceive(&sge, 1, RECV_CTXT);
 
+        printf("[SERVER] Creating listener...\n");
         NdTestServerBase::CreateListener();
+        printf("[SERVER] Listening on %d.%d.%d.%d:%d...\n",
+            v4Src.sin_addr.S_un.S_un_b.s_b1, v4Src.sin_addr.S_un.S_un_b.s_b2,
+            v4Src.sin_addr.S_un.S_un_b.s_b3, v4Src.sin_addr.S_un.S_un_b.s_b4,
+            ntohs(v4Src.sin_port));
         NdTestServerBase::Listen(v4Src);
+        printf("[SERVER] Waiting for connection request...\n");
         NdTestServerBase::GetConnectionRequest();
+        printf("[SERVER] Got connection request. Accepting (inboundReadLimit=%lu)...\n", adapterInfo.MaxInboundReadLimit);
         NdTestServerBase::Accept(adapterInfo.MaxInboundReadLimit, 0);
+        printf("[SERVER] Connection accepted.\n");
+        getchar();
 
-        NdTestBase::CreateMW();
-        NdTestBase::Bind(m_pBuf, x_MaxXfer + x_HdrLen,
-            m_opRead ? ND_OP_FLAG_ALLOW_READ : ND_OP_FLAG_ALLOW_WRITE);
-
-        // send remote token and address
+        // send remote token and address (using MR directly, no Memory Window needed)
         PeerInfo *pInfo = static_cast<PeerInfo *> (m_pBuf);
-        pInfo->m_remoteToken = m_pMw->GetRemoteToken();
+        pInfo->m_remoteToken = m_pMr->GetRemoteToken();
         pInfo->m_nIncomingReadLimit = m_maxIncomingReads;
         pInfo->m_remoteAddress = reinterpret_cast<UINT64>(m_pBuf);
+        printf("[SERVER] Sending PeerInfo: token=0x%x, readLimit=%lu, remoteAddr=0x%llx\n",
+            pInfo->m_remoteToken, pInfo->m_nIncomingReadLimit, pInfo->m_remoteAddress);
         NdTestBase::Send(&sge, 1, 0, SEND_CTXT);
 
         // wait for send completion
+        printf("[SERVER] Waiting for PeerInfo send completion...\n");
         WaitForCompletionAndCheckContext(SEND_CTXT);
+        printf("[SERVER] PeerInfo sent. Waiting for terminate message...\n");
 
         // wait for terminate message
         WaitForCompletionAndCheckContext(RECV_CTXT);
+        printf("[SERVER] Terminate received. Shutting down.\n");
 
         //tear down
         NdTestBase::Shutdown();
@@ -210,6 +228,7 @@ public:
 
     void RunTest(const struct sockaddr_in& v4Src, const struct sockaddr_in& v4Dst, DWORD queueDepth, DWORD nSge)
     {
+        printf("[CLIENT] Initializing adapter...\n");
         NdTestBase::Init(v4Src);
         ND2_ADAPTER_INFO adapterInfo = { 0 };
         NdTestBase::GetAdapterInfo(&adapterInfo);
@@ -219,6 +238,9 @@ public:
         {
             LOG_FAILURE_AND_EXIT(L"Adapter does not support in-order RDMA.", __LINE__);
         }
+        printf("[CLIENT] AdapterInfo: MaxCQDepth=%lu, MaxInitQDepth=%lu, MaxOutboundReadLimit=%lu, InlineThreshold=%lu, Flags=0x%lx\n",
+            adapterInfo.MaxCompletionQueueDepth, adapterInfo.MaxInitiatorQueueDepth,
+            adapterInfo.MaxOutboundReadLimit, adapterInfo.InlineRequestThreshold, adapterInfo.AdapterFlags);
 
         m_queueDepth = (queueDepth > 0) ? min(queueDepth, adapterInfo.MaxCompletionQueueDepth) : adapterInfo.MaxCompletionQueueDepth;
         m_queueDepth = min(m_queueDepth, adapterInfo.MaxInitiatorQueueDepth);
@@ -229,7 +251,9 @@ public:
             m_queueDepth = min(m_queueDepth, adapterInfo.MaxOutboundReadLimit);
             m_nMaxSge = min(nSge, adapterInfo.MaxReadSge);
         }
+        printf("[CLIENT] Using queueDepth=%lu, nMaxSge=%lu, mode=%s\n", m_queueDepth, m_nMaxSge, m_opRead ? "READ" : "WRITE");
 
+        printf("[CLIENT] Creating MR, allocating buffer, registering...\n");
         NdTestBase::CreateMR();
         m_pBuf = static_cast<char *>(HeapAlloc(GetProcessHeap(), 0, x_MaxXfer + x_HdrLen));
         if (!m_pBuf)
@@ -245,7 +269,8 @@ public:
 
         ULONG flags = m_opRead ? ND_MR_FLAG_RDMA_READ_SINK | ND_MR_FLAG_ALLOW_LOCAL_WRITE : ND_MR_FLAG_ALLOW_LOCAL_WRITE;
         NdTestBase::RegisterDataBuffer(m_pBuf, x_MaxXfer + x_HdrLen, flags);
-
+        printf("[CLIENT] MR registered: localToken=0x%x, remoteToken=0x%x\n",
+            m_pMr->GetLocalToken(), m_pMr->GetRemoteToken());
         NdTestBase::CreateCQ(m_queueDepth);
         NdTestBase::CreateConnector();
         NdTestBase::CreateQueuePair(min(m_queueDepth, adapterInfo.MaxReceiveQueueDepth), nSge, m_inlineThreshold);
@@ -256,8 +281,17 @@ public:
         sge.MemoryRegionToken = m_pMr->GetLocalToken();
         NdTestBase::PostReceive(&sge, 1, RECV_CTXT);
 
+        printf("[CLIENT] Connecting to %d.%d.%d.%d:%d (src: %d.%d.%d.%d, outboundReadLimit=%lu)...\n",
+            v4Dst.sin_addr.S_un.S_un_b.s_b1, v4Dst.sin_addr.S_un.S_un_b.s_b2,
+            v4Dst.sin_addr.S_un.S_un_b.s_b3, v4Dst.sin_addr.S_un.S_un_b.s_b4,
+            ntohs(v4Dst.sin_port),
+            v4Src.sin_addr.S_un.S_un_b.s_b1, v4Src.sin_addr.S_un.S_un_b.s_b2,
+            v4Src.sin_addr.S_un.S_un_b.s_b3, v4Src.sin_addr.S_un.S_un_b.s_b4,
+            m_opRead ? m_queueDepth : 0);
         NdTestClientBase::Connect(v4Src, v4Dst, 0, m_opRead ? m_queueDepth : 0);
+        printf("[CLIENT] Connect succeeded. Completing connect...\n");
         NdTestClientBase::CompleteConnect();
+        printf("[CLIENT] Connection established. Waiting for PeerInfo...\n");
 
         // wait for incoming peer info message
         WaitForCompletionAndCheckContext(RECV_CTXT);
@@ -265,9 +299,12 @@ public:
         PeerInfo *pInfo = reinterpret_cast<PeerInfo *>(m_pBuf);
         m_remoteToken = pInfo->m_remoteToken;
         m_remoteAddress = pInfo->m_remoteAddress;
+        printf("[CLIENT] PeerInfo received: token=0x%x, readLimit=%lu, remoteAddr=0x%llx\n",
+            m_remoteToken, pInfo->m_nIncomingReadLimit, m_remoteAddress);
         if (m_opRead)
         {
             m_queueDepth = min(m_queueDepth, pInfo->m_nIncomingReadLimit);
+            printf("[CLIENT] Adjusted queueDepth to %lu (server readLimit)\n", m_queueDepth);
         }
 
         printf("Using %u processors. Sender Frequency is %I64d\n\n"
@@ -280,8 +317,11 @@ public:
         m_availCredits = m_queueDepth;
 
         // warmup
+        printf("[CLIENT] Warmup: 1000 iterations at %zu bytes...\n", x_HdrLen);
         DWORD nSgesUsed = NdTestBase::PrepareSge(m_Sgl, m_nMaxSge, m_pBuf, x_HdrLen, x_HdrLen, m_pMr->GetLocalToken());
+        __debugbreak();
         DoPings(x_HdrLen, 1000, nSgesUsed, m_opRead, m_bUseBlocking);
+        printf("[CLIENT] Warmup complete. Starting benchmark...\n");
         Sleep(1000);
 
         Timer timer;
@@ -315,9 +355,10 @@ public:
         }
 
         // send terminate message
+        printf("[CLIENT] Benchmark complete. Sending terminate message...\n");
         NdTestBase::Send(nullptr, 0, 0);
         WaitForCompletion();
-
+        printf("[CLIENT] Shutting down.\n");
 
         NdTestBase::Shutdown();
     }
@@ -468,6 +509,11 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
     {
         LOG_FAILURE_HRESULT_AND_EXIT(hr, L"NdStartup failed with %08x", __LINE__);
     }
+    printf("NdStartup succeeded.\n");
+    printf("Target address: %d.%d.%d.%d:%d, mode=%s\n",
+        v4Server.sin_addr.S_un.S_un_b.s_b1, v4Server.sin_addr.S_un.S_un_b.s_b2,
+        v4Server.sin_addr.S_un.S_un_b.s_b3, v4Server.sin_addr.S_un.S_un_b.s_b4,
+        ntohs(v4Server.sin_port), bOpRead ? "READ" : "WRITE");
 
     if (bServer)
     {
@@ -476,7 +522,7 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
     }
     else
     {
-        struct sockaddr_in v4Src;
+        /*struct sockaddr_in v4Src;
         SIZE_T len = sizeof(v4Src);
         HRESULT hr = NdResolveAddress((const struct sockaddr*)&v4Server,
             sizeof(v4Server), (struct sockaddr*)&v4Src, &len);
@@ -484,9 +530,12 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
         {
             LOG_FAILURE_HRESULT_AND_EXIT(hr, L"NdResolveAddress failed with %08x", __LINE__);
         }
+        printf("[CLIENT] NdResolveAddress: local addr=%d.%d.%d.%d\n",
+            v4Src.sin_addr.S_un.S_un_b.s_b1, v4Src.sin_addr.S_un.S_un_b.s_b2,
+            v4Src.sin_addr.S_un.S_un_b.s_b3, v4Src.sin_addr.S_un.S_un_b.s_b4);*/
 
         NdrPingClient client(bBlocking, bOpRead);
-        client.RunTest(v4Src, v4Server, 0, nSge);
+        client.RunTest(v4Server, v4Server, 0, nSge);
     }
 
     hr = NdCleanup();

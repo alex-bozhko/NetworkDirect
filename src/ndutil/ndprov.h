@@ -35,7 +35,7 @@ namespace NetworkDirect
 
     public:
         Provider(int version);
-        ~Provider(void);
+        virtual ~Provider(void);
         HRESULT Init(GUID& ProviderGuid);
         void MarkActive(void) { m_Active = true; }
         void MarkInactive(void) { m_Active = false; }

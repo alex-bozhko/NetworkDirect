@@ -9,6 +9,7 @@
 #include "ndaddr.h"
 #include "ndprov.h"
 #include "ndfrmwrk.h"
+#include <stdio.h>
 
 
 namespace NetworkDirect
@@ -677,8 +678,12 @@ namespace NetworkDirect
         ASSERT(err == WSAENOBUFS);
         if (ret != SOCKET_ERROR || err != WSAENOBUFS)
         {
+            printf("[FRMWRK] WSCEnumProtocols initial call failed unexpectedly\n");
             return;
         }
+
+        printf("[FRMWRK] WSCEnumProtocols: buffer needed=%lu bytes (%lu entries)\n",
+            len, len / (DWORD)sizeof(WSAPROTOCOL_INFOW));
 
         // We try only once - if the required buffer size changes then our
         // request for provider changes will get completed and we'll come back
@@ -722,16 +727,21 @@ namespace NetworkDirect
                 // NDv1 providers don't always set the PFL_NETWORKDIRECT flag.
                 if ((pProtocols[i].dwProviderFlags & PFL_HIDDEN) != PFL_HIDDEN)
                 {
+                    printf("[FRMWRK] [%lu] Skipped: NDv1 but missing PFL_HIDDEN (flags=0x%lx)\n", i, pProtocols[i].dwProviderFlags);
                     continue;
                 }
+                printf("[FRMWRK] [%lu] Found NDv1 provider: %ls\n", i, pProtocols[i].szProtocol);
                 break;
 
             case ND_VERSION_2:
                 if ((pProtocols[i].dwProviderFlags & ND_PROVIDER_FLAGS) !=
                     ND_PROVIDER_FLAGS)
                 {
+                    printf("[FRMWRK] [%lu] Skipped: NDv2 but missing provider flags (flags=0x%lx, need=0x%x)\n",
+                        i, pProtocols[i].dwProviderFlags, ND_PROVIDER_FLAGS);
                     continue;
                 }
+                printf("[FRMWRK] [%lu] Found NDv2 provider: %ls\n", i, pProtocols[i].szProtocol);
                 break;
 
             default:
@@ -741,21 +751,25 @@ namespace NetworkDirect
             if (pProtocols[i].iAddressFamily != AF_INET &&
                 pProtocols[i].iAddressFamily != AF_INET6)
             {
+                printf("[FRMWRK] [%lu] Skipped: unsupported address family %d\n", i, pProtocols[i].iAddressFamily);
                 continue;
             }
 
             if (pProtocols[i].iSocketType != -1)
             {
+                printf("[FRMWRK] [%lu] Skipped: iSocketType=%d (expected -1)\n", i, pProtocols[i].iSocketType);
                 continue;
             }
 
             if (pProtocols[i].iProtocol != 0)
             {
+                printf("[FRMWRK] [%lu] Skipped: iProtocol=%d\n", i, pProtocols[i].iProtocol);
                 continue;
             }
 
             if (pProtocols[i].iProtocolMaxOffset != 0)
             {
+                printf("[FRMWRK] [%lu] Skipped: iProtocolMaxOffset=%d\n", i, pProtocols[i].iProtocolMaxOffset);
                 continue;
             }
 
@@ -798,10 +812,12 @@ namespace NetworkDirect
             HRESULT hr = pProvider->Init(pProtocols[i].ProviderId);
             if (FAILED(hr))
             {
+                printf("[FRMWRK] [%lu] Provider::Init failed: 0x%08x\n", i, hr);
                 delete pProvider;
                 continue;
             }
 
+            printf("[FRMWRK] [%lu] Provider added successfully (path resolved)\n", i);
             m_ProviderList.push_back(pProvider);
         }
         ::HeapFree(ghHeap, 0, pProtocols);
@@ -842,6 +858,7 @@ namespace NetworkDirect
             }
 
             HRESULT hr = pProv->QueryAddressList(pAddrList, &len);
+            printf("[FRMWRK] Provider::QueryAddressList returned 0x%08x, len=%lu\n", hr, len);
             if (hr == ND_BUFFER_OVERFLOW)
             {
                 if (pAddrList != nullptr)
@@ -859,14 +876,29 @@ namespace NetworkDirect
                 }
 
                 hr = pProv->QueryAddressList(pAddrList, &len);
+                printf("[FRMWRK] Provider::QueryAddressList (retry) returned 0x%08x\n", hr);
             }
 
             if (FAILED(hr))
             {
+                printf("[FRMWRK] Provider::QueryAddressList failed, skipping\n");
                 continue;
             }
 
             __analysis_assume(pAddrList);
+
+            printf("[FRMWRK] Provider returned %d addresses (version=%s)\n",
+                pAddrList->iAddressCount, pProv->GetVersion() == ND_VERSION_1 ? "NDv1" : "NDv2");
+            for (int j = 0; j < pAddrList->iAddressCount; j++)
+            {
+                if (pAddrList->Address[j].lpSockaddr->sa_family == AF_INET)
+                {
+                    struct sockaddr_in* pAddr = (struct sockaddr_in*)pAddrList->Address[j].lpSockaddr;
+                    printf("[FRMWRK]   addr[%d]: %d.%d.%d.%d\n", j,
+                        pAddr->sin_addr.S_un.S_un_b.s_b1, pAddr->sin_addr.S_un.S_un_b.s_b2,
+                        pAddr->sin_addr.S_un.S_un_b.s_b3, pAddr->sin_addr.S_un.S_un_b.s_b4);
+                }
+            }
 
             if (pProv->GetVersion() == ND_VERSION_1)
             {

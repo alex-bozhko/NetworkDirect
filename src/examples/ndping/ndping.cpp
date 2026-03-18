@@ -13,7 +13,7 @@ const USHORT x_DefaultPort = 54324;
 const SIZE_T x_MaxXfer = (4 * 1024 * 1024);
 const ULONG  x_HdrLen = 40;
 const SIZE_T x_MaxVolume = (500 * x_MaxXfer);
-const SIZE_T x_MaxIterations = 500000;
+const SIZE_T x_MaxIterations = 10000;
 
 const LPCWSTR TESTNAME = L"ndping.exe";
 
@@ -56,8 +56,11 @@ public:
         _In_ DWORD queueDepth,
         _In_ DWORD nSge)
     {
+        printf("[SERVER] Initializing adapter...\n");
         NdPingServer::Init(v4Src);
+        printf("[SERVER] Adapter initialized. Creating MR...\n");
         NdTestBase::CreateMR();
+        printf("[SERVER] Registering data buffer (%zu bytes)...\n", x_MaxXfer + x_HdrLen);
         NdTestBase::RegisterDataBuffer(m_pBuf, x_MaxXfer + x_HdrLen, ND_MR_FLAG_ALLOW_LOCAL_WRITE);
 
         ND2_ADAPTER_INFO adapterInfo = { 0 };
@@ -65,13 +68,24 @@ public:
         m_queueDepth = min(adapterInfo.MaxCompletionQueueDepth, adapterInfo.MaxReceiveQueueDepth);
         m_queueDepth = (queueDepth != 0) ? min(queueDepth, m_queueDepth) : m_queueDepth;
         m_inlineSizeThreshold = adapterInfo.InlineRequestThreshold;
+        printf("[SERVER] AdapterInfo: MaxCQDepth=%lu, MaxRecvQDepth=%lu, InlineThreshold=%lu\n",
+            adapterInfo.MaxCompletionQueueDepth, adapterInfo.MaxReceiveQueueDepth, m_inlineSizeThreshold);
+        printf("[SERVER] Using queueDepth=%lu\n", m_queueDepth);
 
+        printf("[SERVER] Creating CQ, Connector, QP...\n");
         NdTestBase::CreateCQ(m_queueDepth);
         NdTestBase::CreateConnector();
         NdTestBase::CreateQueuePair(m_queueDepth, nSge, m_inlineSizeThreshold);
+        printf("[SERVER] Creating listener...\n");
         NdTestServerBase::CreateListener();
+        printf("[SERVER] Listening on %d.%d.%d.%d:%d...\n",
+            v4Src.sin_addr.S_un.S_un_b.s_b1, v4Src.sin_addr.S_un.S_un_b.s_b2,
+            v4Src.sin_addr.S_un.S_un_b.s_b3, v4Src.sin_addr.S_un.S_un_b.s_b4,
+            ntohs(v4Src.sin_port));
         NdTestServerBase::Listen(v4Src);
+        printf("[SERVER] Waiting for connection request...\n");
         NdTestServerBase::GetConnectionRequest();
+        printf("[SERVER] Got connection request.\n");
 
         m_sgl = new (std::nothrow) ND2_SGE[nSge];
         if (m_sgl == nullptr)
@@ -88,7 +102,10 @@ public:
 
         // advertise one less to account for incoming SYNC message
         ULONG advertisedQueueDepth = m_queueDepth - 1;
+        printf("[SERVER] Posted %lu receives. Accepting with advertised depth=%lu...\n",
+            m_queueDepth, advertisedQueueDepth);
         NdTestServerBase::Accept(0, 0, &advertisedQueueDepth, sizeof(advertisedQueueDepth));
+        printf("[SERVER] Connection accepted. Receiving pings...\n");
         ReceivePings();
 
         //tear down
@@ -187,8 +204,10 @@ public:
         _In_ DWORD queueDepth,
         _In_ DWORD nMaxSge)
     {
+        printf("[CLIENT] Initializing adapter...\n");
         NdTestBase::Init(v4Src);
 
+        printf("[CLIENT] Creating MR and registering buffer...\n");
         NdTestBase::CreateMR();
         NdTestBase::RegisterDataBuffer(m_pBuf, x_MaxXfer + x_HdrLen,
             ND_MR_FLAG_ALLOW_LOCAL_WRITE, ND_SUCCESS, "Register memory failed");
@@ -198,20 +217,37 @@ public:
         m_queueDepth = min(adapterInfo.MaxCompletionQueueDepth, adapterInfo.MaxInitiatorQueueDepth);
         m_queueDepth = (queueDepth != 0) ? min(queueDepth, m_queueDepth) : m_queueDepth;
         m_inlineSizeThreshold = adapterInfo.InlineRequestThreshold;
+        printf("[CLIENT] AdapterInfo: MaxCQDepth=%lu, MaxInitQDepth=%lu, InlineThreshold=%lu\n",
+            adapterInfo.MaxCompletionQueueDepth, adapterInfo.MaxInitiatorQueueDepth, m_inlineSizeThreshold);
+        printf("[CLIENT] Using queueDepth=%lu\n", m_queueDepth);
 
+        printf("[CLIENT] Creating CQ, Connector, QP...\n");
         NdTestBase::CreateCQ(m_queueDepth);
         NdTestBase::CreateConnector();
         NdTestBase::CreateQueuePair(m_queueDepth, nMaxSge, m_inlineSizeThreshold);
 
+        printf("[CLIENT] Connecting to %d.%d.%d.%d:%d (src: %d.%d.%d.%d)...\n",
+            v4Dst.sin_addr.S_un.S_un_b.s_b1, v4Dst.sin_addr.S_un.S_un_b.s_b2,
+            v4Dst.sin_addr.S_un.S_un_b.s_b3, v4Dst.sin_addr.S_un.S_un_b.s_b4,
+            ntohs(v4Dst.sin_port),
+            v4Src.sin_addr.S_un.S_un_b.s_b1, v4Src.sin_addr.S_un.S_un_b.s_b2,
+            v4Src.sin_addr.S_un.S_un_b.s_b3, v4Src.sin_addr.S_un.S_un_b.s_b4);
+
         NdTestClientBase::Connect(v4Src, v4Dst, 0, 0);
+        printf("[CLIENT] Connect returned successfully.\n");
 
         // get peer queue depth
         m_peerQueueDepth = 0;
         ULONG len = 0;
-        if (m_pConnector->GetPrivateData(nullptr, &len) != ND_BUFFER_OVERFLOW)
+        printf("[CLIENT] Getting private data from server...\n");
+        HRESULT hrPriv = m_pConnector->GetPrivateData(nullptr, &len);
+        printf("[CLIENT] GetPrivateData(nullptr) returned 0x%08x, len=%lu\n", hrPriv, len);
+        if (hrPriv != ND_BUFFER_OVERFLOW && (hrPriv != ND_SUCCESS || len == 0))
         {
+            printf("[CLIENT] Unexpected GetPrivateData result.\n");
             LOG_FAILURE_AND_EXIT(L"GetPrivateData failed\n", __LINE__);
         }
+        printf("[CLIENT] Private data size: %lu bytes\n", len);
 
         void *tmpBuf = malloc(len);
         if (tmpBuf == nullptr)
@@ -220,6 +256,7 @@ public:
         }
 
         HRESULT hr = m_pConnector->GetPrivateData(tmpBuf, &len);
+        printf("[CLIENT] GetPrivateData(buf) returned 0x%08x\n", hr);
         if (ND_SUCCESS != hr)
         {
             free(tmpBuf);
@@ -233,6 +270,7 @@ public:
         free(tmpBuf);
 
         NdTestClientBase::CompleteConnect();
+        printf("[CLIENT] Connection fully established. Peer queue depth=%lu\n", m_peerQueueDepth);
 
         //prepare Sge lists
         m_sendSgl = new (std::nothrow) ND2_SGE[nMaxSge];
@@ -515,6 +553,11 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
     {
         LOG_FAILURE_HRESULT_AND_EXIT(hr, L"NdStartup failed with %08x", __LINE__);
     }
+    printf("NdStartup succeeded.\n");
+    printf("Target address: %d.%d.%d.%d:%d\n",
+        v4Server.sin_addr.S_un.S_un_b.s_b1, v4Server.sin_addr.S_un.S_un_b.s_b2,
+        v4Server.sin_addr.S_un.S_un_b.s_b3, v4Server.sin_addr.S_un.S_un_b.s_b4,
+        ntohs(v4Server.sin_port));
 
     char *pBuf = static_cast<char *>(HeapAlloc(GetProcessHeap(), 0, x_MaxXfer + x_HdrLen));
     if (!pBuf)
@@ -541,6 +584,9 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
             HeapFree(GetProcessHeap(), 0, pBuf);
             LOG_FAILURE_HRESULT_AND_EXIT(hr, L"NdResolveAddress failed with %08x", __LINE__);
         }
+        printf("[CLIENT] NdResolveAddress: local addr=%d.%d.%d.%d\n",
+            v4Src.sin_addr.S_un.S_un_b.s_b1, v4Src.sin_addr.S_un.S_un_b.s_b2,
+            v4Src.sin_addr.S_un.S_un_b.s_b3, v4Src.sin_addr.S_un.S_un_b.s_b4);
 
 #pragma warning (suppress: 6001) // ignore unitialized memory warning for pBuf
         NdPingClient client(pBuf, bBlocking, nPipeline);

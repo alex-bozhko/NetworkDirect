@@ -52,11 +52,11 @@
   </PropertyGroup>  
 
   <!--
-    Importing the "global" CBT build.props is what activates CBT.Core to restore modules.  You will want to set
-    properties before or after it depending on what you're injecting.  The "global" build.props will also import
-    files located in the $(CBTLocalPath) folder at certain points.
+    CBT build.props import disabled - the MyGet CBT feed (myget.org/F/cbt) no longer exists.
+    CBT was only needed for command-line tree builds (dirs.proj) and auto NuGet restore;
+    neither is required for Visual Studio builds.
   -->
-  <Import Project="$(EnlistmentRoot)\.build\CBT\build.props" />
+  <!-- <Import Project="$(EnlistmentRoot)\.build\CBT\build.props" /> -->
   
   <!--
     The NuProjPath property allows .nuproj projects to build without having NuProj installed.
@@ -76,9 +76,8 @@
   <PropertyGroup>
     <OutputPath>$(StagingOutputRootPath)$(MSBuildProjectName)\</OutputPath>
     <OutIncludePath>$(StagingOutputRootPath)include</OutIncludePath>
-    <VCToolsVersion>14.15.26726</VCToolsVersion>
-    <WindowsTargetPlatformVersion>10.0.16299.0</WindowsTargetPlatformVersion>
-    <PlatformToolset>v141</PlatformToolset>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <PlatformToolset Condition=" '$(PlatformToolset)' == '' ">v143</PlatformToolset>
     <CharacterSet>Unicode</CharacterSet>
     <OutDir>$(OutputPath)</OutDir>
     <ResolveNugetpackages>false</ResolveNugetpackages>

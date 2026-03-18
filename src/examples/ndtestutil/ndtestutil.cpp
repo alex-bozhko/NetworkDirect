@@ -538,6 +538,8 @@ void NdTestServerBase::Accept(
     //
     // Accept the connection.
     //
+    /*printf("[ACCEPT] Calling Accept(inRead=%lu, outRead=%lu, privateDataLen=%lu)...\n",
+        inboundReadLimit, outboundReadLimit, cbPrivateData);*/
     HRESULT hr = m_pConnector->Accept(
         m_pQp,
         inboundReadLimit,
@@ -546,9 +548,12 @@ void NdTestServerBase::Accept(
         cbPrivateData,
         &m_Ov
     );
+    //printf("[ACCEPT] Accept returned 0x%08x\n", hr);
     if (hr == ND_PENDING)
     {
+        //printf("[ACCEPT] Waiting for overlapped result...\n");
         hr = m_pConnector->GetOverlappedResult(&m_Ov, TRUE);
+        //printf("[ACCEPT] GetOverlappedResult returned 0x%08x\n", hr);
     }
     LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
 }
@@ -571,9 +576,11 @@ void NdTestClientBase::Connect(
         reinterpret_cast<const sockaddr*>(&v4Src),
         sizeof(v4Src)
     );
+    printf("[CONNECT] Bind returned 0x%08x\n", hr);
     if (hr == ND_PENDING)
     {
         hr = m_pConnector->GetOverlappedResult(&m_Ov, TRUE);
+        printf("[CONNECT] Bind overlapped returned 0x%08x\n", hr);
     }
 
     hr = m_pConnector->Connect(
@@ -586,9 +593,12 @@ void NdTestClientBase::Connect(
         cbPrivateData,
         &m_Ov
     );
+    printf("[CONNECT] Connect returned 0x%08x\n", hr);
     if (hr == ND_PENDING)
     {
+        printf("[CONNECT] Waiting for overlapped result...\n");
         hr = m_pConnector->GetOverlappedResult(&m_Ov, TRUE);
+        printf("[CONNECT] Connect overlapped returned 0x%08x\n", hr);
     }
     LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
 }

@@ -1,0 +1,5 @@
+LIBRARY ndprov
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE
+    WSPStartup

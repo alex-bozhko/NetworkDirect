@@ -7,6 +7,7 @@
 #include "precomp.h"
 #include "ndaddr.h"
 #include "ndprov.h"
+#include <stdio.h>
 
 
 namespace NetworkDirect
@@ -45,6 +46,8 @@ namespace NetworkDirect
         INT pathLen;
         INT ret, err;
         WCHAR* pPath;
+
+        printf("[PROV] Init: loading provider path from catalog...\n");
 
         // Get the path length for the provider DLL.
         pPath = static_cast<WCHAR*>(
@@ -90,6 +93,7 @@ namespace NetworkDirect
         }
 
         m_Guid = ProviderGuid;
+        printf("[PROV] Init: DLL path = %ls\n", m_Path);
         return S_OK;
     }
 
@@ -105,12 +109,15 @@ namespace NetworkDirect
     {
         if (m_hProvider == nullptr)
         {
+            printf("[PROV] Loading provider DLL: %ls\n", m_Path);
             HMODULE hProvider;
             hProvider = ::LoadLibraryExW(m_Path, nullptr, 0);
             if (hProvider == nullptr)
             {
+                printf("[PROV] LoadLibraryExW failed: error %lu\n", ::GetLastError());
                 return HRESULT_FROM_WIN32(::GetLastError());
             }
+            printf("[PROV] DLL loaded at %p\n", hProvider);
 
             m_pfnDllGetClassObject = reinterpret_cast<DLLGETCLASSOBJECT>(
                 ::GetProcAddress(hProvider, "DllGetClassObject")
@@ -178,6 +185,10 @@ namespace NetworkDirect
 
     NdV1Provider::NdV1Provider() :
         Provider(ND_VERSION_1)
+    {
+    }
+
+    NdV1Provider::~NdV1Provider()
     {
     }
 
@@ -271,6 +282,10 @@ namespace NetworkDirect
 
     NdProvider::NdProvider() :
         Provider(ND_VERSION_2)
+    {
+    }
+
+    NdProvider::~NdProvider()
     {
     }
 
