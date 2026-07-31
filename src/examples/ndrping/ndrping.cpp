@@ -116,7 +116,6 @@ public:
         printf("[SERVER] Got connection request. Accepting (inboundReadLimit=%lu)...\n", adapterInfo.MaxInboundReadLimit);
         NdTestServerBase::Accept(adapterInfo.MaxInboundReadLimit, 0);
         printf("[SERVER] Connection accepted.\n");
-        getchar();
 
         // send remote token and address (using MR directly, no Memory Window needed)
         PeerInfo *pInfo = static_cast<PeerInfo *> (m_pBuf);
@@ -319,7 +318,6 @@ public:
         // warmup
         printf("[CLIENT] Warmup: 1000 iterations at %zu bytes...\n", x_HdrLen);
         DWORD nSgesUsed = NdTestBase::PrepareSge(m_Sgl, m_nMaxSge, m_pBuf, x_HdrLen, x_HdrLen, m_pMr->GetLocalToken());
-        __debugbreak();
         DoPings(x_HdrLen, 1000, nSgesUsed, m_opRead, m_bUseBlocking);
         printf("[CLIENT] Warmup complete. Starting benchmark...\n");
         Sleep(1000);
@@ -522,9 +520,9 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
     }
     else
     {
-        /*struct sockaddr_in v4Src;
+        struct sockaddr_in v4Src;
         SIZE_T len = sizeof(v4Src);
-        HRESULT hr = NdResolveAddress((const struct sockaddr*)&v4Server,
+        hr = NdResolveAddress((const struct sockaddr*)&v4Server,
             sizeof(v4Server), (struct sockaddr*)&v4Src, &len);
         if (FAILED(hr))
         {
@@ -532,10 +530,10 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
         }
         printf("[CLIENT] NdResolveAddress: local addr=%d.%d.%d.%d\n",
             v4Src.sin_addr.S_un.S_un_b.s_b1, v4Src.sin_addr.S_un.S_un_b.s_b2,
-            v4Src.sin_addr.S_un.S_un_b.s_b3, v4Src.sin_addr.S_un.S_un_b.s_b4);*/
+            v4Src.sin_addr.S_un.S_un_b.s_b3, v4Src.sin_addr.S_un.S_un_b.s_b4);
 
         NdrPingClient client(bBlocking, bOpRead);
-        client.RunTest(v4Server, v4Server, 0, nSge);
+        client.RunTest(v4Src, v4Server, 0, nSge);
     }
 
     hr = NdCleanup();
