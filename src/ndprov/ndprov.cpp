@@ -173,10 +173,60 @@ ULONG NdCompletionQueue::GetResults(ND2_RESULT results[], ULONG nResults)
         case RdmaCompletionEventTypeReceiveWithInvalidate:
             ndType = Nd2RequestTypeReceive;
             break;
+
+        // Error completions. The driver raises all of these from its receive path
+        // (RdmaQueuePair::FailRxStream), which then flushes every still-posted receive.
+        // Consumers should identify the request via RequestContext, not RequestType.
+        case RdmaCompletionEventTypeLocalLengthError:
+            ndType = Nd2RequestTypeReceive;
+            ndStatus = ND_LOCAL_LENGTH;
+            break;
+        case RdmaCompletionEventTypeLocalProtectionError:
+            ndType = Nd2RequestTypeReceive;
+            ndStatus = ND_ACCESS_VIOLATION;
+            break;
+        case RdmaCompletionEventTypeRemoteAccessError:
+        case RdmaCompletionEventTypeRemoteOperationError:
+        case RdmaCompletionEventTypeBadResponseError:
+            ndType = Nd2RequestTypeReceive;
+            ndStatus = ND_REMOTE_ERROR;
+            break;
+        case RdmaCompletionEventTypeRetryExceeded:
+        case RdmaCompletionEventTypeRnrRetryExceeded:
+            ndType = Nd2RequestTypeReceive;
+            ndStatus = ND_IO_TIMEOUT;
+            break;
+        case RdmaCompletionEventTypeTransportError:
+            ndType = Nd2RequestTypeReceive;
+            ndStatus = ND_CONNECTION_ABORTED;
+            break;
+        case RdmaCompletionEventTypeFlushError:
+            ndType = Nd2RequestTypeReceive;
+            ndStatus = ND_CANCELED;
+            break;
+        case RdmaCompletionEventTypeMemoryWindowBindError:
+            ndType = Nd2RequestTypeSend;
+            ndStatus = ND_INVALID_DEVICE_REQUEST;
+            break;
+
         default:
+            // the enum starts at 1 and the driver zero-fills the ring, so 0 here means the
+            // entry was never written - a shared ring sync bug rather than an RDMA error
+            fprintf(stderr, "[ndprov] GetResults: unknown completion event %u at drain %u (post %u) - "
+                "entry was likely never written by the driver\n",
+                static_cast<UINT32>(entry.Event), static_cast<UINT32>(drain), static_cast<UINT32>(post));
             ndType = Nd2RequestTypeSend;
             ndStatus = ND_UNSUCCESSFUL;
             break;
+        }
+
+        if (FAILED(ndStatus))
+        {
+            fprintf(stderr, "[ndprov] GetResults: error event %u ctx=0x%llX bytes=%u -> status=0x%08X\n",
+                static_cast<UINT32>(entry.Event),
+                static_cast<UINT64>(entry.RequestContext),
+                static_cast<UINT32>(entry.BytesTransferred),
+                static_cast<UINT32>(ndStatus));
         }
 
         results[count].Status = ndStatus;
