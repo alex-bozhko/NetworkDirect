@@ -27,6 +27,45 @@ NetworkDirect SDK is available in [Nuget](https://www.nuget.org/packages/network
  ## Build
  To build, open a __Native Tools Command Prompt for Visual Studio__ and  run ``msbuild`` from root folder.
 
+## Experimental features in this branch
+
+- **NetworkDirect v2 provider:** `ndprov.dll` implements the NDv2 provider interface to support RDMA over usb4 connection. It works in combination with usb4 drivers that are shipped separately.
+- **Provider management:** `ndprov_install.exe` installs, lists, and removes `ndprov.dll` from the Winsock provider catalog.
+- **Transfer samples:** `transfer_file.exe` transfers files over NetworkDirect, `transfer_file_sockets.exe` provides a TCP comparison, and `share_screen.exe` streams the desktop over NetworkDirect.
+- **Test documentation:** [docs/test-suite-reference.md](./docs/test-suite-reference.md) describes the included examples and validation tools.
+
+### Install `ndprov.dll`
+
+Build the x64 provider and installer:
+
+```bat
+msbuild src\netdirect.sln /m /p:Configuration=Release /p:Platform=x64
+```
+
+Then open an **Administrator** command prompt and install the provider using an absolute DLL path:
+
+```bat
+out\Release-x64\ndprov_install\ndprov_install.exe install "C:\full\path\to\NetworkDirect\out\Release-x64\ndprov\ndprov.dll"
+```
+
+Keep `ndprov.dll` at the registered path. To list NetworkDirect providers or remove `ndprov.dll`, run:
+
+```bat
+out\Release-x64\ndprov_install\ndprov_install.exe dump
+out\Release-x64\ndprov_install\ndprov_install.exe uninstall
+```
+
+### Run the transfer samples
+
+Start the receiver first, then the sender:
+
+```bat
+transfer_file.exe -s <server-ip>
+transfer_file.exe -c <server-ip> <file-path>
+```
+
+Use `transfer_file_sockets.exe` with the same `-s` and `-c` arguments for a TCP baseline. Run `share_screen.exe -s <server-ip>` on the display host and `share_screen.exe -c <server-ip>` on the capture host.
+
 # Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
