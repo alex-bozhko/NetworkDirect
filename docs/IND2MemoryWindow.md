@@ -1,4 +1,6 @@
 # IND2MemoryWindow interface
+> **ndprov.dll:** Not supported. [IND2Adapter::CreateMemoryWindow](./IND2Adapter.md#ind2adaptercreatememorywindow) fails.
+
 Memory windows are used to grant a remote peer Read and/or Write access to a region of your registered memory.
 The [IND2Adapter::CreateMemoryWindow](./IND2Adapter.md#ind2adaptercreatememorywindow) method returns this interface.
 

@@ -21,6 +21,8 @@ The NetworkDirect SPI framework defines the following interfaces:
 - [__IND2Connector__](./IND2Connector.md): Interface to a connector instance that is used to manage connection establishment for IND2QueuePair objects. Created through the [IND2Adapter::CreateConnector](./IND2Adapter.md#ind2adaptercreateconnector) method.
 - [__IND2Listener__](./IND2Listener.md): Interface to a listen request. Created through the [IND2Adapter::CreateListener](./IND2Adapter.md#ind2adaptercreatelistener) method.
 
+> **ndprov.dll:** The USB4 provider in this repository implements a subset of the SPI: Send and Receive data transfers over connected queue pairs. Memory windows ([IND2MemoryWindow](./IND2MemoryWindow.md)), shared receive queues ([IND2SharedReceiveQueue](./IND2SharedReceiveQueue.md)), and RDMA Read and Write ([IND2QueuePair::Read](./IND2QueuePair.md#ind2queuepairread), [IND2QueuePair::Write](./IND2QueuePair.md#ind2queuepairwrite)) are not supported; those calls fail.
+
 ## Provider management
 
 NetworkDirect SPI applications support zero, one, or more service provider libraries. NetworkDirect provider management follows the established mechanisms defined for [Windows Sockets Direct](https://docs.microsoft.com/windows-hardware/drivers/network/windows-sockets-direct) providers and traditional layered service providers.

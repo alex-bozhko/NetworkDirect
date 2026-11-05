@@ -1,4 +1,6 @@
 # IND2SharedReceiveQueue interface
+> **ndprov.dll:** Not supported. [IND2Adapter::CreateSharedReceiveQueue](./IND2Adapter.md#ind2adaptercreatesharedreceivequeue) fails.
+
 Use to pool Receive requests among multiple queue pairs. 
 The [IND2Adapter::CreateSharedReceiveQueue](./IND2Adapter.md#ind2adaptercreatesharedreceivequeue) method returns this interface.
 

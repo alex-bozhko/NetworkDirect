@@ -12,6 +12,8 @@ The IND2QueuePair interface inherits the methods of the [IUnknown](https://docs.
 - [__Read__](#ind2queuepairread) - Initiates an RDMA Read request.
 - [__Write__](#ind2queuepairwrite) - Initiates an RDMA Write request.
 
+> **ndprov.dll:** Only Flush, Send and Receive are supported. Bind, Invalidate, Read and Write fail.
+
 __Remarks:__
 
 If you do not retrieve the outstanding requests from the completion queue before releasing your last reference to this queue pair, you may get back requests from the completion queue that were issued on a now-closed queue pair.
@@ -168,6 +170,8 @@ The protocol determines how many Receive requests you must post and the buffer s
 If the method fails, the queue pair can still process existing or future requests. However, if the [IND2CompletionQueue::GetResults](./IND2CompletionQueue.md#ind2completionqueuegetresults) method returns an [ND2_RESULT](./IND2CompletionQueue.md#nd2_result-structure) with an error status, the connection is terminated and any further requests are completed with ND_CANCELED status.
 
 ## IND2QueuePair::Bind
+> **ndprov.dll:** Not supported; the call fails.
+
 Binds a memory window to a buffer that is within the registered memory.
 ```
 HRESULT Bind(
@@ -238,6 +242,8 @@ If the method fails, the queue pair can still process existing or future request
 The token for accessing the remote memory can be retrieved through the [IND2MemoryWindow::GetRemoteToken](./IND2MemoryWindow.md#ind2memorywindowgetremotetoken) method as soon as this method returns, before the Bind operation completion is reported through the [IND2CompletionQueue::GetResults](./IND2CompletionQueue.md#ind2completionqueuegetresults) method.
 
 ## IND2QueuePair::Invalidate
+> **ndprov.dll:** Not supported; the call fails.
+
 Invalidates a local memory window. Any in-progress data transfers that reference the memory window will fail.
 ```
 HRESULT Invalidate(
@@ -281,6 +287,8 @@ If the method fails, the queue pair can still process existing or future request
 
 
 ## IND2QueuePair::Read
+> **ndprov.dll:** Not supported; the call fails.
+
 Initiates an RDMA Read request.
 ```
 HRESULT Read(
@@ -348,6 +356,8 @@ You can read the data in a single scatter/gather entry or in multiple entries. F
 If the method fails, the queue pair can still process existing or future requests. However, if the [IND2CompletionQueue::GetResults](./IND2CompletionQueue.md#ind2completionqueuegetresults) method returns an [ND2_RESULT](./IND2CompletionQueue.md#nd2_result-structure) with an error status, the connection is terminated and any further requests are completed with ND_CANCELED status.
 
 ## IND2QueuePair::Write
+> **ndprov.dll:** Not supported; the call fails.
+
 Initiates a one-sided write operation.
 
 ```

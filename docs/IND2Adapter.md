@@ -380,6 +380,8 @@ __Remarks__
 You must create memory regions to reference memory in data transfer operations.
 
 # IND2Adapter::CreateMemoryWindow
+> **ndprov.dll:** Not supported; the call fails.
+
 Creates an uninitialized memory window.
 ```
 HRESULT CreateMemoryWindow(
@@ -416,6 +418,8 @@ To invalidate the window, call the [IND2QueuePair::Invalidate](./IND2QueuePair.m
 
 
 ## IND2Adapter::CreateSharedReceiveQueue
+> **ndprov.dll:** Not supported; the call fails.
+
 Allocates a shared receive queue.
 ```
 HRESULT CreateSharedReceiveQueue(
@@ -557,6 +561,8 @@ You can specify the same completion queue for both pReceiveCompletionQueue and p
 An instance of the [IND2Connector](./IND2Connector.md) interface can have only a single queue pair associated with it at a time. To disassociate the queue pair from the connector, the queue pair must be disconnected.
 
 ## IND2Adapter::CreateQueuePairWithSrq
+> **ndprov.dll:** Not supported; the call fails.
+
 Creates a queue pair to use for data transfers that are associated with a shared receive queue.
 ```
 HRESULT CreateQueuePairWithSrq(

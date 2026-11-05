@@ -14,7 +14,6 @@ This document provides a comprehensive overview of all example and unit test pro
   - [ndmrlat — Memory Registration Latency](#ndmrlat--memory-registration-latency)
   - [ndmrrate — Memory Registration Throughput](#ndmrrate--memory-registration-throughput)
   - [ndping — Send/Recv Latency (Unidirectional)](#ndping--sendrecv-latency-unidirectional)
-  - [ndpingpong — Send/Recv Latency (Bidirectional)](#ndpingpong--sendrecv-latency-bidirectional)
   - [ndlat — Send/Recv Round-Trip Latency](#ndlat--sendrecv-round-trip-latency)
   - [ndtput — Send/Recv Throughput](#ndtput--sendrecv-throughput)
 - [Unit Tests](#unit-tests)
@@ -249,52 +248,6 @@ ndping -c -p 192.168.1.10:54324
 # With blocking I/O and 4 SGEs
 ndping -s -b -n 4 192.168.1.10:54324
 ndping -c -b -n 4 192.168.1.10:54324
-```
-
----
-
-### ndpingpong — Send/Recv Latency (Bidirectional)
-
-**Purpose:** Measures round-trip send/receive latency using a strict ping-pong pattern — client sends, server echoes back, measuring full round-trip time.
-
-**Usage:**
-```
-ndpingpong [options] <ip>[:<port>]
-Options:
-  -s            - Start as server
-  -c            - Start as client
-  -b            - Blocking I/O
-  -p            - Polling I/O (default)
-  -n <nSge>     - SGE count (default: 1)
-  -q <pipeline> - Pipeline limit
-  -l <logFile>  - Log output
-```
-
-**Defaults:**
-| Parameter | Value |
-|-----------|-------|
-| Port | 54325 |
-| Max transfer size | 4 MB |
-| Max iterations | 100,000 |
-| Completion mode | Polling |
-
-**Protocol:**
-1. **Client** sends message → waits for send completion → waits for receive (pong)
-2. **Server** receives message → sends echo → waits for send completion
-3. Strictly sequential — one message in flight at a time (no pipelining)
-4. Reported latency = round-trip time / 2
-
-**What it measures:**
-- One-way latency (half of measured round-trip)
-- CPU utilization
-- Throughput (2× for bidirectional)
-
-**Requires:** Server + Client.
-
-**Examples:**
-```
-ndpingpong -s -p 192.168.1.10:54325
-ndpingpong -c -p 192.168.1.10:54325
 ```
 
 ---
@@ -617,7 +570,6 @@ Static library providing base classes for test infrastructure:
 | ndmemorytest | 54321 |
 | ndmpic | 54322 |
 | ndping | 54324 |
-| ndpingpong | 54325 |
 | ndmval | 54331 |
 | ndlat | 54324 (same as ndping) |
 | ndtput | 54326 |

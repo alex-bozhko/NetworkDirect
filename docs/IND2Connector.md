@@ -269,6 +269,9 @@ The remote peer or connecting peer can call this method to reject the connection
 
 ## IND2Connector::GetReadLimits
 Retrieves the read limits of the peer.
+
+> **ndprov.dll:** RDMA Read is not supported, so both limits are always 0.
+
 ```
 HRESULT GetReadLimits(
  [out, optional] ULONG *pInboundReadLimit,

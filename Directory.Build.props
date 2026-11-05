@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-    <!--
-  This root MSBuild file should be imported by all projects in the tree and serves as the central entry point for CBT.
-  You can have a  hierarchy of imports but make sure that this file is still imported.
--->
+<!-- Common build settings imported by every project in the tree. -->
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Label="Global locations">
     <!--
@@ -17,55 +14,6 @@
     <EnlistmentRoot>$(MSBuildThisFileDirectory.TrimEnd('\\'))</EnlistmentRoot>
     <NuGetPackagesPath Condition=" '$(NuGetPackagesPath)' == '' ">$(EnlistmentRoot)\packages</NuGetPackagesPath>
 
-    <!-- 
-      Enable CBT.DotNetFx-net452 build package to be used globally
-    -->
-    <!-- <EnableCBT_DotNetFx-net452>true</EnableCBT_DotNetFx-net452> -->
-    <!--
-     Set a default TargetFrameworkVersion if needed
-    <TargetFrameworkVersion Condition=" '$(TargetFrameworkVersion)' == '' ">v4.5.2</TargetFrameworkVersion>
-    -->
-  </PropertyGroup>
-  
-  <!-- 
-    StyleCop.json and Code Analysis Custom Dictionary settings
-  -->
-  <ItemGroup Condition="Exists('$(SRCROOT)\stylecop.json') and Exists('$(SRCROOT)\CustomDictionary.xml')" >
-    <AdditionalFiles Include="$(SRCROOT)\stylecop.json" />
-    <CodeAnalysisDictionary Include="$(SRCROOT)\CustomDictionary.xml">
-      <Link>CustomDictionary.xml</Link>
-    </CodeAnalysisDictionary>
-  </ItemGroup>
-  <PropertyGroup>
-    <RunCodeAnalysis>False</RunCodeAnalysis>
-    <CodeAnalysisSummary>true</CodeAnalysisSummary>
-    <CodeAnalysisTimeout>300</CodeAnalysisTimeout>
-    <CodeAnalysisTreatWarningsAsErrors>false</CodeAnalysisTreatWarningsAsErrors>
-    <CodeAnalysisSearchGlobalAssemblyCache>false</CodeAnalysisSearchGlobalAssemblyCache>
-  </PropertyGroup>
-
-  <!--
-    Nuproj ProjectReference dependency assembly resolution
-  -->
-  <PropertyGroup Condition=" '$(MSBuildProjectExtension)' != '.nuproj' And !Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.targets\ImportAfter\Microsoft.Common.NuProj.targets') ">
-    <EnableNuProj_Common Condition=" '$(EnableNuProj_Common)' == '' ">true</EnableNuProj_Common>
-  </PropertyGroup>  
-
-  <!--
-    CBT build.props import disabled - the MyGet CBT feed (myget.org/F/cbt) no longer exists.
-    CBT was only needed for command-line tree builds (dirs.proj) and auto NuGet restore;
-    neither is required for Visual Studio builds.
-  -->
-  <!-- <Import Project="$(EnlistmentRoot)\.build\CBT\build.props" /> -->
-  
-  <!--
-    The NuProjPath property allows .nuproj projects to build without having NuProj installed.
-  -->
-  <PropertyGroup Condition=" '$(MSBuildProjectExtension)' == '.nuproj'" >
-    <NuProjPath Condition=" Exists('$(MSBuildExtensionsPath)\NuProj\NuProj.props') ">$(MSBuildExtensionsPath)\NuProj</NuProjPath>
-    <NuProjPath Condition=" '$(CBTModule_NuProj)' != '' And '$(NuProjPath)' == '' ">$(CBTModule_NuProj)\tools</NuProjPath>
-    <!-- Whenever a project manually imports Directory.Build.props and it could be imported again by Microsoft.Common.props, you set ImportDirectoryBuildProps to false  -->
-    <ImportDirectoryBuildProps>false</ImportDirectoryBuildProps>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -130,14 +78,6 @@
     </Link>
   </ItemDefinitionGroup>
 
-  <ItemDefinitionGroup Condition="'$(Platform)'=='Win32'">
-    <ClCompile>
-      <PreprocessorDefinitions>WIN32;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-    </ClCompile>
-    <Link>
-    </Link>
-  </ItemDefinitionGroup>
-
   <Target Name="CopyFilesToStagingOutputDirectory" AfterTargets="CopyFilesToOutputDirectory" Condition=" '$(StagingOutputPath)' != '' ">
     <ItemGroup>
      <!-- Gather all files in the output directory recursively -->
@@ -156,9 +96,4 @@
       <Output TaskParameter="DestinationFiles" ItemName="FileWrites"/>
     </Copy>
   </Target>
-
-
-  <!-- NuProj.props sets a default TargetFrameworkVersion if none is set. Import this before any DotNetFx module props/targets that rely on TargetFrameworkVersion. -->
-  <!--  <Import Project="$(NuProjPath)\NuProj.props" Condition="Exists('$(NuProjPath)\NuProj.props') AND '$(MSBuildProjectExtension)' == '.nuproj'" /> -->
-  
 </Project>
