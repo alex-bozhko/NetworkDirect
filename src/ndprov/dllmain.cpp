@@ -24,7 +24,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     {
     case DLL_PROCESS_ATTACH:
     {
-        LogToFile("[ndprov] DLL loaded (pid=%lu)\n", GetCurrentProcessId());
+        TraceLoggingRegister(g_ndprovTraceProvider);
+        NdTrace("DLL loaded (pid=%lu)", GetCurrentProcessId());
         DisableThreadLibraryCalls(hModule);
         WSADATA wsaData;
         WSAStartup(MAKEWORD(2, 2), &wsaData);
@@ -32,7 +33,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
     }
     case DLL_PROCESS_DETACH:
         WSACleanup();
-        LogToFile("[ndprov] DLL unloaded (pid=%lu)\n", GetCurrentProcessId());
+        NdTrace("DLL unloaded (pid=%lu)", GetCurrentProcessId());
+        TraceLoggingUnregister(g_ndprovTraceProvider);
         break;
     }
     return TRUE;
@@ -46,7 +48,7 @@ extern "C" HRESULT STDAPICALLTYPE DllGetClassObject(
     WCHAR guidStr[64], iidStr[64];
     StringFromGUID2(rclsid, guidStr, 64);
     StringFromGUID2(riid, iidStr, 64);
-    LogToFile("[ndprov] DllGetClassObject: clsid=%ls, iid=%ls\n", guidStr, iidStr);
+    NdTrace("DllGetClassObject: clsid=%ls, iid=%ls", guidStr, iidStr);
 
     if (ppv == nullptr)
     {
@@ -64,17 +66,17 @@ extern "C" HRESULT STDAPICALLTYPE DllGetClassObject(
         }
         *ppv = static_cast<IND2Provider *>(provider);
         InterlockedIncrement(&g_cObjects);
-        LogToFile("[ndprov] Returning IND2Provider OK\n");
+        NdTrace("Returning IND2Provider OK");
         return S_OK;
     }
 
-    LogToFile("[ndprov] Unknown IID, returning E_NOINTERFACE\n");
+    NdTrace("Unknown IID, returning E_NOINTERFACE");
     return E_NOINTERFACE;
 }
 
 extern "C" HRESULT STDAPICALLTYPE DllCanUnloadNow()
 {
-    LogToFile("[ndprov] DllCanUnloadNow: objects=%ld, locks=%ld\n", g_cObjects, g_cServerLocks);
+    NdTrace("DllCanUnloadNow: objects=%ld, locks=%ld", g_cObjects, g_cServerLocks);
     return (g_cObjects == 0 && g_cServerLocks == 0) ? S_OK : S_FALSE;
 }
 

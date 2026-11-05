@@ -55,7 +55,6 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="ndprov.def" />
-    <None Include="enable-file-logging.reg" />
     <None Include="packages.config" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

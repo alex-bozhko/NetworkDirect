@@ -63,6 +63,17 @@ out\Release-x64\ndprov_install\ndprov_install.exe dump
 out\Release-x64\ndprov_install\ndprov_install.exe uninstall
 ```
 
+### Collect `ndprov.dll` traces
+
+`ndprov.dll` logs through a TraceLogging ETW provider named `Microsoft.NetworkDirect.NdProv` (GUID `{B71AF425-C11E-54C8-BD6E-20FFB13DCADB}`). Nothing is logged unless a trace session enables it. From an elevated prompt:
+
+```bat
+logman start ndprov -p "{B71AF425-C11E-54C8-BD6E-20FFB13DCADB}" 0xffffffffffffffff 0xff -o ndprov.etl -ets
+rem ... run the workload ...
+logman stop ndprov -ets
+tracerpt ndprov.etl -o ndprov.xml -of XML -y
+```
+
 ## Setting up a USB4 test bed for RDMA
 
 Connecting two machines with a USB4 (Thunderbolt) cable creates a `USB4(TM) P2P Network Adapter` on each end. Before the tests will run reliably, check two things: the network profile and the IP addressing. Both cause failures that look like broken hardware but are not.

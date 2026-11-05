@@ -14,7 +14,6 @@
 
 static constexpr WCHAR c_configurationRegistryPath[]{ L"SOFTWARE\\Microsoft\\USB4P2P\\NDProvider" };
 static constexpr WCHAR c_cmPortOffsetValueName[]{ L"CmPortOffset" };
-static constexpr WCHAR c_fileLoggingEnabledValueName[]{ L"FileLoggingEnabled" };
 static constexpr WCHAR c_notifySpinMicrosecondsValueName[] = L"NotifySpinMicroseconds";
 static constexpr WCHAR c_zeroPortFallbackServicePortValueName[]{ L"ZeroPortFallbackServicePort" };
 static constexpr DWORD c_defaultCmPortOffset{ 1 };
@@ -28,7 +27,6 @@ struct NdProviderConfiguration
     DWORD cmPortOffset{ c_defaultCmPortOffset };
     DWORD zeroPortFallbackServicePort{ c_defaultZeroPortFallbackServicePort };
     DWORD notifySpinMicroseconds = 0;
-    bool fileLoggingEnabled{ false };
 };
 
 static
@@ -58,13 +56,6 @@ GetProviderConfiguration()
         NdProviderConfiguration result{};
         DWORD value{};
         if (TryReadConfigurationDword(
-                c_fileLoggingEnabledValueName,
-                &value))
-        {
-            result.fileLoggingEnabled = value != 0;
-        }
-
-        if (TryReadConfigurationDword(
                 c_cmPortOffsetValueName,
                 &value) &&
             value <= c_maxTcpPort)
@@ -93,54 +84,42 @@ GetProviderConfiguration()
     return configuration;
 }
 
-struct NdProviderLogState
-{
-    NdProviderLogState()
-    {
-        if (GetProviderConfiguration().fileLoggingEnabled)
-        {
-            fopen_s(
-                &file,
-                "C:\\ndprov_log.txt",
-                "a");
-        }
-    }
-
-    unique_ndprov_log_file file{};
-    SRWLOCK lock{};
-};
-
-static
-NdProviderLogState &
-GetProviderLogState()
-{
-    static NdProviderLogState state{};
-    return state;
-}
+// Microsoft.NetworkDirect.NdProv
+// {B71AF425-C11E-54C8-BD6E-20FFB13DCADB}, derived from the provider name.
+TRACELOGGING_DEFINE_PROVIDER(
+    g_ndprovTraceProvider,
+    "Microsoft.NetworkDirect.NdProv",
+    (0xb71af425, 0xc11e, 0x54c8, 0xbd, 0x6e, 0x20, 0xff, 0xb1, 0x3d, 0xca, 0xdb));
 
 void
-LogToFile(
+NdTrace(
     _In_z_ _Printf_format_string_ const char *format,
     ...)
 {
-    NdProviderLogState &state = GetProviderLogState();
-    if (!state.file)
+    if (!TraceLoggingProviderEnabled(
+            g_ndprovTraceProvider,
+            WINEVENT_LEVEL_INFO,
+            0))
     {
         return;
     }
 
-    AcquireSRWLockExclusive(&state.lock);
+    char message[512];
     va_list arguments;
     va_start(
         arguments,
         format);
-    vfprintf(
-        state.file.get(),
+    _vsnprintf_s(
+        message,
+        _TRUNCATE,
         format,
         arguments);
     va_end(arguments);
-    fflush(state.file.get());
-    ReleaseSRWLockExclusive(&state.lock);
+    TraceLoggingWrite(
+        g_ndprovTraceProvider,
+        "Trace",
+        TraceLoggingLevel(WINEVENT_LEVEL_INFO),
+        TraceLoggingString(message, "Message"));
 }
 
 // ============================================================================
@@ -738,7 +717,6 @@ NdCompletionQueue::~NdCompletionQueue()
     if (!deviceUsage.IsAvailable())
     {
         // Closing the RDMA handle already made the driver release the ring.
-        LOG_ENTRY("CQ::~NdCompletionQueue (device removed)");
         return;
     }
 
@@ -756,13 +734,12 @@ NdCompletionQueue::~NdCompletionQueue()
         // use, so this fails only if the request didn't reach it. It may then
         // still write the ring, so the ring must outlive this object.
         const RDMA_CQ_RING_HEADER *const leakedRing = m_ring.release();
-        LogToFile(
-            "[ndprov] CQ::~NdCompletionQueue destroy failed: 0x%08X, leaking ring %p\n",
+        NdTrace(
+            "CQ::~NdCompletionQueue destroy failed: 0x%08X, leaking ring %p",
             destroyStatus,
             static_cast<const void *>(leakedRing));
         return;
     }
-    LOG_ENTRY("CQ::~NdCompletionQueue (destroyed)");
 }
 
 HRESULT NdCompletionQueue::QueryInterface(REFIID riid, LPVOID* ppvObj)
@@ -801,8 +778,6 @@ WaitForOverlappedWithoutEvent(
 
 HRESULT NdCompletionQueue::CancelOverlappedRequests()
 {
-    LOG_ENTRY("CQ::CancelOverlappedRequests");
-
     return RunWithNotifyHandle(
         [this](_In_ HANDLE notifyHandle) -> HRESULT
         {
@@ -828,8 +803,6 @@ HRESULT NdCompletionQueue::CancelOverlappedRequests()
 
 HRESULT NdCompletionQueue::GetOverlappedResult(OVERLAPPED* pOverlapped, BOOL wait)
 {
-    LOG_ENTRY("CQ::GetOverlappedResult");
-
     if (pOverlapped == nullptr)
     {
         return E_INVALIDARG;
@@ -867,7 +840,6 @@ HRESULT NdCompletionQueue::GetOverlappedResult(OVERLAPPED* pOverlapped, BOOL wai
 
 HRESULT NdCompletionQueue::GetNotifyAffinity(USHORT* pGroup, KAFFINITY* pAffinity)
 {
-    LOG_ENTRY("CQ::GetNotifyAffinity");
     if (pGroup)
     {
         *pGroup = 0;
@@ -881,15 +853,12 @@ HRESULT NdCompletionQueue::GetNotifyAffinity(USHORT* pGroup, KAFFINITY* pAffinit
 
 HRESULT NdCompletionQueue::Resize(ULONG queueDepth)
 {
-    LOG_ENTRY("CQ::Resize");
     UNREFERENCED_PARAMETER(queueDepth);
     return ND_NOT_SUPPORTED;
 }
 
 HRESULT NdCompletionQueue::Notify(ULONG type, OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("CQ::Notify");
-
     if (pOverlapped == nullptr)
     {
         return E_INVALIDARG;
@@ -1035,14 +1004,14 @@ ULONG NdCompletionQueue::GetResults(ND2_RESULT results[], ULONG nResults)
                 {
                     // The enum starts at 1 and the driver zero-fills the ring, so an unknown
                     // event usually means the entry was never written - a ring sync bug.
-                    LogToFile(
-                        "[ndprov] GetResults: unknown completion event %u at position %u - "
-                        "entry was likely never written by the driver\n",
+                    NdTrace(
+                        "GetResults: unknown completion event %u at position %u - "
+                        "entry was likely never written by the driver",
                         static_cast<UINT32>(entry.Event),
                         position);
                 }
-                LogToFile(
-                    "[ndprov] GetResults: error event %u ctx=0x%llX bytes=%u -> status=0x%08X\n",
+                NdTrace(
+                    "GetResults: error event %u ctx=0x%llX bytes=%u -> status=0x%08X",
                     static_cast<UINT32>(entry.Event),
                     static_cast<UINT64>(entry.RequestContext),
                     static_cast<UINT32>(entry.BytesTransferred),
@@ -1084,13 +1053,9 @@ NdMemoryRegion::~NdMemoryRegion()
             0);
         if (FAILED(status))
         {
-            LogToFile(
-                "[ndprov] MR destructor deregistration failed: 0x%08X\n",
+            NdTrace(
+                "MR destructor deregistration failed: 0x%08X",
                 status);
-        }
-        else
-        {
-            LOG_ENTRY("MR::~NdMemoryRegion (destroyed)");
         }
     }
 }
@@ -1109,13 +1074,11 @@ HRESULT NdMemoryRegion::QueryInterface(REFIID riid, LPVOID* ppvObj)
 
 HRESULT NdMemoryRegion::CancelOverlappedRequests()
 {
-    LOG_ENTRY("MR::CancelOverlappedRequests");
     return S_OK;
 }
 
 HRESULT NdMemoryRegion::GetOverlappedResult(OVERLAPPED* pOverlapped, BOOL wait)
 {
-    LOG_ENTRY("MR::GetOverlappedResult");
     return S_OK;
 }
 
@@ -1129,8 +1092,6 @@ IsPageAligned(
 
 HRESULT NdMemoryRegion::Register(const VOID* pBuffer, SIZE_T cbBuffer, ULONG flags, OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("MR::Register");
-
     if ((flags & ~ND_MR_FLAG_ALLOW_LOCAL_WRITE) != 0)
     {
         return ND_NOT_SUPPORTED;
@@ -1164,7 +1125,7 @@ HRESULT NdMemoryRegion::Register(const VOID* pBuffer, SIZE_T cbBuffer, ULONG fla
         sizeof(output));
     if (FAILED(hr))
     {
-        LogToFile("[ndprov] MR::Register failed: 0x%08X\n", hr);
+        NdTrace("MR::Register failed: 0x%08X", hr);
         return hr;
     }
 
@@ -1173,14 +1134,12 @@ HRESULT NdMemoryRegion::Register(const VOID* pBuffer, SIZE_T cbBuffer, ULONG fla
     m_mrKey = output.MemoryRegionKey;
     m_registered = true;
 
-    LogToFile("[ndprov] MR::Register OK, key=%u\n", m_mrKey);
+    NdTrace("MR::Register OK, key=%u", m_mrKey);
     return S_OK;
 }
 
 HRESULT NdMemoryRegion::Deregister(OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("MR::Deregister");
-
     if (m_registered)
     {
         const RDMA_DESTROY_MEMORY_REGION_INPUT input{ m_mrKey };
@@ -1192,7 +1151,7 @@ HRESULT NdMemoryRegion::Deregister(OVERLAPPED* pOverlapped)
             0);
         if (FAILED(hr))
         {
-            LogToFile("[ndprov] MR::Deregister failed: 0x%08X\n", hr);
+            NdTrace("MR::Deregister failed: 0x%08X", hr);
             return hr == HRESULT_FROM_WIN32(ERROR_BUSY) ? ND_DEVICE_BUSY : hr;
         }
     }
@@ -1267,14 +1226,13 @@ NdQueuePair::~NdQueuePair()
     const HRESULT flushStatus = FlushLocked();
     if (FAILED(flushStatus))
     {
-        LogToFile(
-            "[ndprov] QP destructor flush failed: 0x%08X\n",
+        NdTrace(
+            "QP destructor flush failed: 0x%08X",
             flushStatus);
     }
 
     CloseQueuePairFile();
     ReleaseSRWLockExclusive(&m_lock);
-    LOG_ENTRY("QP::~NdQueuePair (destroyed)");
 
     if (m_pSendCq)
     {
@@ -1409,7 +1367,7 @@ NdQueuePair::BeginBind(
 
     if (error != ERROR_SUCCESS && error != ERROR_IO_PENDING)
     {
-        LogToFile("[ndprov] QP::BeginBind CreateQueuePair IOCTL failed: %lu\n", error);
+        NdTrace("QP::BeginBind CreateQueuePair IOCTL failed: %lu", error);
         return MapBindError(error);
     }
 
@@ -1460,15 +1418,15 @@ NdQueuePair::EndBind(
 
     if (FAILED(hr))
     {
-        LogToFile(
-            "[ndprov] QP bind failed: 0x%08X\n",
+        NdTrace(
+            "QP bind failed: 0x%08X",
             hr);
         return hr;
     }
 
     m_queuePairFile = std::move(queuePairFile);
-    LogToFile(
-        "[ndprov] QP bound, id=%llu, tunnel=%u\n",
+    NdTrace(
+        "QP bound, id=%llu, tunnel=%u",
         m_bindOutput.QueuePairId,
         m_bindOutput.TunnelIndex);
 
@@ -1489,8 +1447,8 @@ NdQueuePair::EndBind(
             const HRESULT flushStatus = FlushLocked();
             if (FAILED(flushStatus))
             {
-                LogToFile(
-                    "[ndprov] QP bind failure flush failed: 0x%08X\n",
+                NdTrace(
+                    "QP bind failure flush failed: 0x%08X",
                     flushStatus);
             }
 
@@ -1502,8 +1460,8 @@ NdQueuePair::EndBind(
     m_pendingReceiveCount = 0;
     StartReleaseNotificationLocked();
 
-    LogToFile(
-        "[ndprov] QP bound to tunnel %u, id=%I64u\n",
+    NdTrace(
+        "QP bound to tunnel %u, id=%I64u",
         m_bindOutput.TunnelIndex,
         m_bindOutput.QueuePairId);
 
@@ -1535,8 +1493,8 @@ NdQueuePair::StartReleaseNotificationLocked()
     }
 
     // Without the notification, the connection can't tell when it ends.
-    LogToFile(
-        "[ndprov] QP release notification failed: %lu\n",
+    NdTrace(
+        "QP release notification failed: %lu",
         GetLastError());
     m_releaseStatus = ND_CONNECTION_ABORTED;
     m_releaseEvent.SetEvent();
@@ -1590,8 +1548,8 @@ NdQueuePair::AbortBinding()
     const HRESULT status = FlushLocked();
     if (FAILED(status))
     {
-        LogToFile(
-            "[ndprov] QP abort flush failed: 0x%08X\n",
+        NdTrace(
+            "QP abort flush failed: 0x%08X",
             status);
     }
 
@@ -1613,7 +1571,6 @@ NdQueuePair::CloseQueuePairFile()
         }
 
         m_queuePairFile.reset();
-        LOG_ENTRY("QP::CloseQueuePairFile");
     }
 }
 
@@ -1665,7 +1622,6 @@ HRESULT NdQueuePair::QueryInterface(REFIID riid, LPVOID* ppvObj)
 
 HRESULT NdQueuePair::Flush()
 {
-    LOG_ENTRY("QP::Flush");
     AcquireSRWLockExclusive(&m_lock);
     const HRESULT status = FlushLocked();
     ReleaseSRWLockExclusive(&m_lock);
@@ -1807,8 +1763,6 @@ NdQueuePair::GetDataPathStatus() const
 
 HRESULT NdQueuePair::Send(VOID* requestContext, const ND2_SGE sge[], ULONG nSge, ULONG flags)
 {
-    LOG_ENTRY("QP::Send");
-
     if (nSge > m_maxInitiatorRequestSge)
     {
         return ND_DATA_OVERRUN;
@@ -1872,8 +1826,6 @@ HRESULT NdQueuePair::Send(VOID* requestContext, const ND2_SGE sge[], ULONG nSge,
 
 HRESULT NdQueuePair::Receive(VOID* requestContext, const ND2_SGE sge[], ULONG nSge)
 {
-    LOG_ENTRY("QP::Receive");
-
     if (nSge == 0)
     {
         return E_INVALIDARG;
@@ -1956,27 +1908,23 @@ NdQueuePair::PostReceive(
 HRESULT NdQueuePair::Bind(VOID* requestContext, IUnknown* pMemoryRegion, IUnknown* pMemoryWindow,
     const VOID* pBuffer, SIZE_T cbBuffer, ULONG flags)
 {
-    LOG_ENTRY("QP::Bind");
     return ND_NOT_SUPPORTED;
 }
 
 HRESULT NdQueuePair::Invalidate(VOID* requestContext, IUnknown* pMemoryWindow, ULONG flags)
 {
-    LOG_ENTRY("QP::Invalidate");
     return ND_NOT_SUPPORTED;
 }
 
 HRESULT NdQueuePair::Read(VOID* requestContext, const ND2_SGE sge[], ULONG nSge,
     UINT64 remoteAddress, UINT32 remoteToken, ULONG flags)
 {
-    LOG_ENTRY("QP::Read");
     return ND_NOT_SUPPORTED;
 }
 
 HRESULT NdQueuePair::Write(VOID* requestContext, const ND2_SGE sge[], ULONG nSge,
     UINT64 remoteAddress, UINT32 remoteToken, ULONG flags)
 {
-    LOG_ENTRY("QP::Write");
     return ND_NOT_SUPPORTED;
 }
 
@@ -2066,8 +2014,8 @@ NdOverlappedRequests::Complete(
 
     // The request never reached the driver. Report the result through the
     // OVERLAPPED as far as possible; the caller returns it too.
-    LogToFile(
-        "[ndprov] Completing an overlapped request with 0x%08X failed: %lu\n",
+    NdTrace(
+        "Completing an overlapped request with 0x%08X failed: %lu",
         input.Status,
         error);
     WriteULongPtrRelease(
@@ -2208,8 +2156,8 @@ ApplyZeroPortFallback(
     }
 
     serviceAddress.sin_port = htons(static_cast<USHORT>(fallbackServicePort));
-    LogToFile(
-        "[ndprov] %s substituted zero service port: servicePort=%lu\n",
+    NdTrace(
+        "%s substituted zero service port: servicePort=%lu",
         operation,
         fallbackServicePort);
 }
@@ -2223,9 +2171,9 @@ LogCmSocketFailure(
     int error)
 {
     const ULONG address = ntohl(serviceAddress.sin_addr.s_addr);
-    LogToFile(
-        "[ndprov] %s failed: address=%u.%u.%u.%u, servicePort=%u, "
-        "cmPort=%u, wsaError=%d\n",
+    NdTrace(
+        "%s failed: address=%u.%u.%u.%u, servicePort=%u, "
+        "cmPort=%u, wsaError=%d",
         operation,
         static_cast<unsigned int>((address >> 24) & 0xff),
         static_cast<unsigned int>((address >> 16) & 0xff),
@@ -2245,8 +2193,8 @@ LogSocketAddress(
 {
     if (address == nullptr)
     {
-        LogToFile(
-            "[ndprov] %s: address=null, addressLength=%lu\n",
+        NdTrace(
+            "%s: address=null, addressLength=%lu",
             operation,
             addressLength);
         return;
@@ -2255,8 +2203,8 @@ LogSocketAddress(
     const ADDRESS_FAMILY family = addressLength >= sizeof(address->sa_family) ? address->sa_family : AF_UNSPEC;
     if (addressLength < sizeof(struct sockaddr_in) || family != AF_INET)
     {
-        LogToFile(
-            "[ndprov] %s: addressLength=%lu, family=%u\n",
+        NdTrace(
+            "%s: addressLength=%lu, family=%u",
             operation,
             addressLength,
             static_cast<unsigned int>(family));
@@ -2265,9 +2213,9 @@ LogSocketAddress(
 
     const struct sockaddr_in *const ipv4Address = reinterpret_cast<const struct sockaddr_in *>(address);
     const ULONG addressValue = ntohl(ipv4Address->sin_addr.s_addr);
-    LogToFile(
-        "[ndprov] %s: address=%u.%u.%u.%u, port=%u, "
-        "addressLength=%lu, family=%u\n",
+    NdTrace(
+        "%s: address=%u.%u.%u.%u, port=%u, "
+        "addressLength=%lu, family=%u",
         operation,
         static_cast<unsigned int>((addressValue >> 24) & 0xff),
         static_cast<unsigned int>((addressValue >> 16) & 0xff),
@@ -2286,9 +2234,9 @@ LogSocketAddressFailure(
     int error)
 {
     const ULONG ipv4Address = ntohl(address.sin_addr.s_addr);
-    LogToFile(
-        "[ndprov] %s failed: address=%u.%u.%u.%u, port=%u, "
-        "wsaError=%d\n",
+    NdTrace(
+        "%s failed: address=%u.%u.%u.%u, port=%u, "
+        "wsaError=%d",
         operation,
         static_cast<unsigned int>((ipv4Address >> 24) & 0xff),
         static_cast<unsigned int>((ipv4Address >> 16) & 0xff),
@@ -2313,9 +2261,9 @@ SetCmSocketTimeouts(
             sizeof(receiveTimeoutMilliseconds)) == SOCKET_ERROR)
     {
         const int error = WSAGetLastError();
-        LogToFile(
-            "[ndprov] setsockopt(SO_RCVTIMEO) failed: socket=%llu, "
-            "timeoutMs=%lu, wsaError=%d\n",
+        NdTrace(
+            "setsockopt(SO_RCVTIMEO) failed: socket=%llu, "
+            "timeoutMs=%lu, wsaError=%d",
             static_cast<unsigned long long>(socket),
             receiveTimeoutMilliseconds,
             error);
@@ -2330,9 +2278,9 @@ SetCmSocketTimeouts(
             sizeof(sendTimeoutMilliseconds)) == SOCKET_ERROR)
     {
         const int error = WSAGetLastError();
-        LogToFile(
-            "[ndprov] setsockopt(SO_SNDTIMEO) failed: socket=%llu, "
-            "timeoutMs=%lu, wsaError=%d\n",
+        NdTrace(
+            "setsockopt(SO_SNDTIMEO) failed: socket=%llu, "
+            "timeoutMs=%lu, wsaError=%d",
             static_cast<unsigned long long>(socket),
             sendTimeoutMilliseconds,
             error);
@@ -2367,9 +2315,9 @@ EnableCmKeepAlive(
             nullptr) == SOCKET_ERROR)
     {
         const int error = WSAGetLastError();
-        LogToFile(
-            "[ndprov] WSAIoctl(SIO_KEEPALIVE_VALS) failed: socket=%llu, "
-            "wsaError=%d\n",
+        NdTrace(
+            "WSAIoctl(SIO_KEEPALIVE_VALS) failed: socket=%llu, "
+            "wsaError=%d",
             static_cast<unsigned long long>(socket),
             error);
         return HRESULT_FROM_WIN32(error);
@@ -2609,8 +2557,8 @@ NdConnector::~NdConnector()
     const HRESULT status = DisconnectWorker();
     if (FAILED(status) && status != ND_CONNECTION_INVALID)
     {
-        LogToFile(
-            "[ndprov] Connector destructor disconnect failed: 0x%08X\n",
+        NdTrace(
+            "Connector destructor disconnect failed: 0x%08X",
             status);
     }
 
@@ -2753,8 +2701,8 @@ NdConnector::OnQueuePairReleased()
     m_disconnectRequest = nullptr;
     ReleaseSRWLockExclusive(&m_stateLock);
 
-    LogToFile(
-        "[ndprov] Connection released: 0x%08X\n",
+    NdTrace(
+        "Connection released: 0x%08X",
         status);
 
     if (disconnectRequest != nullptr)
@@ -2796,8 +2744,8 @@ NdConnector::AbortAccept(
             &abort,
             static_cast<int>(sizeof(abort))))
     {
-        LogToFile(
-            "[ndprov] Conn::Accept failed to send the abort: 0x%08X\n",
+        NdTrace(
+            "Conn::Accept failed to send the abort: 0x%08X",
             status);
     }
 
@@ -2819,8 +2767,6 @@ HRESULT NdConnector::QueryInterface(REFIID riid, LPVOID* ppvObj)
 
 HRESULT NdConnector::CancelOverlappedRequests()
 {
-    LOG_ENTRY("Conn::CancelOverlappedRequests");
-
     // The cancel event ends a running Connect or Accept that waits for the
     // peer application or for its binding, and shutting the socket down ends
     // one blocked on the socket. The operation then completes with
@@ -2852,7 +2798,6 @@ HRESULT NdConnector::CancelOverlappedRequests()
 
 HRESULT NdConnector::GetOverlappedResult(OVERLAPPED* pOverlapped, BOOL wait)
 {
-    LOG_ENTRY("Conn::GetOverlappedResult");
     return NdOverlappedRequests::GetResult(
         pOverlapped,
         wait);
@@ -2860,16 +2805,15 @@ HRESULT NdConnector::GetOverlappedResult(OVERLAPPED* pOverlapped, BOOL wait)
 
 HRESULT NdConnector::Bind(const struct sockaddr* pAddress, ULONG cbAddress)
 {
-    LOG_ENTRY("Conn::Bind");
     LogSocketAddress(
         "Conn::Bind requested",
         pAddress,
         cbAddress);
     if (pAddress == nullptr || cbAddress > sizeof(m_localAddr))
     {
-        LogToFile(
-            "[ndprov] Conn::Bind rejected: addressLength=%lu, "
-            "maximumLength=%zu\n",
+        NdTrace(
+            "Conn::Bind rejected: addressLength=%lu, "
+            "maximumLength=%zu",
             cbAddress,
             sizeof(m_localAddr));
         return E_INVALIDARG;
@@ -3041,8 +2985,6 @@ HRESULT NdConnector::Connect(IUnknown* pQueuePair, const struct sockaddr* pDestA
     ULONG inboundReadLimit, ULONG outboundReadLimit,
     const VOID* pPrivateData, ULONG cbPrivateData, OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("Conn::Connect");
-
     if (pOverlapped == nullptr || pQueuePair == nullptr || pDestAddress == nullptr || cbDestAddress > sizeof(struct sockaddr_in))
     {
         return E_INVALIDARG;
@@ -3100,10 +3042,10 @@ NdConnector::ConnectWorker(
 
     if (pQueuePair == nullptr || pDestAddress == nullptr || cbDestAddress > sizeof(m_peerAddr) || m_socket)
     {
-        LogToFile(
-            "[ndprov] Conn::Connect rejected: queuePair=%p, "
+        NdTrace(
+            "Conn::Connect rejected: queuePair=%p, "
             "destination=%p, destinationLength=%lu, maximumLength=%zu, "
-            "socketActive=%u\n",
+            "socketActive=%u",
             static_cast<const void *>(pQueuePair),
             static_cast<const void *>(pDestAddress),
             cbDestAddress,
@@ -3162,9 +3104,9 @@ NdConnector::ConnectWorker(
 
         if (m_peerAddr.sin_family != AF_INET || m_peerAddr.sin_port == 0)
         {
-            LogToFile(
-                "[ndprov] Conn::Connect invalid destination: "
-                "destinationLength=%lu, family=%u, servicePort=%u\n",
+            NdTrace(
+                "Conn::Connect invalid destination: "
+                "destinationLength=%lu, family=%u, servicePort=%u",
                 m_peerAddrLen,
                 static_cast<unsigned int>(m_peerAddr.sin_family),
                 static_cast<unsigned int>(ntohs(m_peerAddr.sin_port)));
@@ -3178,17 +3120,17 @@ NdConnector::ConnectWorker(
             cmPeerAddress);
         if (FAILED(result))
         {
-            LogToFile(
-                "[ndprov] Conn::Connect invalid CM port mapping: "
-                "servicePort=%u, offset=%lu\n",
+            NdTrace(
+                "Conn::Connect invalid CM port mapping: "
+                "servicePort=%u, offset=%lu",
                 static_cast<unsigned int>(ntohs(m_peerAddr.sin_port)),
                 GetProviderConfiguration().cmPortOffset);
             break;
         }
 
-        LogToFile(
-            "[ndprov] Conn::Connect attempting: servicePort=%u, "
-            "cmPort=%u, offset=%lu\n",
+        NdTrace(
+            "Conn::Connect attempting: servicePort=%u, "
+            "cmPort=%u, offset=%lu",
             static_cast<unsigned int>(ntohs(m_peerAddr.sin_port)),
             static_cast<unsigned int>(ntohs(cmPeerAddress.sin_port)),
             GetProviderConfiguration().cmPortOffset);
@@ -3271,8 +3213,8 @@ NdConnector::ConnectWorker(
             break;
         }
 
-        LogToFile(
-            "[ndprov] Conn::Connect connected: servicePort=%u, cmPort=%u\n",
+        NdTrace(
+            "Conn::Connect connected: servicePort=%u, cmPort=%u",
             static_cast<unsigned int>(ntohs(m_peerAddr.sin_port)),
             static_cast<unsigned int>(ntohs(cmPeerAddress.sin_port)));
 
@@ -3434,8 +3376,6 @@ NdConnector::ConnectWorker(
 
 HRESULT NdConnector::CompleteConnect(OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("Conn::CompleteConnect");
-
     if (pOverlapped == nullptr)
     {
         return E_INVALIDARG;
@@ -3452,8 +3392,6 @@ HRESULT NdConnector::CompleteConnect(OVERLAPPED* pOverlapped)
 HRESULT NdConnector::Accept(IUnknown* pQueuePair, ULONG inboundReadLimit, ULONG outboundReadLimit,
     const VOID* pPrivateData, ULONG cbPrivateData, OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("Conn::Accept");
-
     if (pOverlapped == nullptr)
     {
         return E_INVALIDARG;
@@ -3540,8 +3478,8 @@ NdConnector::AcceptWorker(
 
     if (FAILED(result))
     {
-        LogToFile(
-            "[ndprov] Conn::Accept binding failed: 0x%08X\n",
+        NdTrace(
+            "Conn::Accept binding failed: 0x%08X",
             result);
         return AbortAccept(result);
     }
@@ -3586,7 +3524,6 @@ NdConnector::AcceptWorker(
 
 HRESULT NdConnector::Reject(const VOID* pPrivateData, ULONG cbPrivateData)
 {
-    LOG_ENTRY("Conn::Reject");
     if (!m_socket)
     {
         return E_FAIL;
@@ -3618,7 +3555,6 @@ HRESULT NdConnector::Reject(const VOID* pPrivateData, ULONG cbPrivateData)
 
 HRESULT NdConnector::GetReadLimits(ULONG* pInboundReadLimit, ULONG* pOutboundReadLimit)
 {
-    LOG_ENTRY("Conn::GetReadLimits");
     if (pInboundReadLimit)
     {
         *pInboundReadLimit = 0;
@@ -3632,7 +3568,6 @@ HRESULT NdConnector::GetReadLimits(ULONG* pInboundReadLimit, ULONG* pOutboundRea
 
 HRESULT NdConnector::GetPrivateData(VOID* pPrivateData, ULONG* pcbPrivateData)
 {
-    LOG_ENTRY("Conn::GetPrivateData");
     if (!pcbPrivateData)
     {
         return E_INVALIDARG;
@@ -3648,7 +3583,6 @@ HRESULT NdConnector::GetPrivateData(VOID* pPrivateData, ULONG* pcbPrivateData)
 
 HRESULT NdConnector::GetLocalAddress(struct sockaddr* pAddress, ULONG* pcbAddress)
 {
-    LOG_ENTRY("Conn::GetLocalAddress");
     if (m_localAddrLen == 0)
     {
         return E_NOTIMPL;
@@ -3661,7 +3595,6 @@ HRESULT NdConnector::GetLocalAddress(struct sockaddr* pAddress, ULONG* pcbAddres
 
 HRESULT NdConnector::GetPeerAddress(struct sockaddr* pAddress, ULONG* pcbAddress)
 {
-    LOG_ENTRY("Conn::GetPeerAddress");
     if (m_peerAddrLen == 0)
     {
         return E_NOTIMPL;
@@ -3674,8 +3607,6 @@ HRESULT NdConnector::GetPeerAddress(struct sockaddr* pAddress, ULONG* pcbAddress
 
 HRESULT NdConnector::NotifyDisconnect(OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("Conn::NotifyDisconnect");
-
     if (pOverlapped == nullptr)
     {
         return E_INVALIDARG;
@@ -3714,8 +3645,6 @@ HRESULT NdConnector::NotifyDisconnect(OVERLAPPED* pOverlapped)
 
 HRESULT NdConnector::Disconnect(OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("Conn::Disconnect");
-
     if (pOverlapped == nullptr)
     {
         return E_INVALIDARG;
@@ -3829,8 +3758,6 @@ HRESULT NdListener::QueryInterface(REFIID riid, LPVOID* ppvObj)
 
 HRESULT NdListener::CancelOverlappedRequests()
 {
-    LOG_ENTRY("Listener::CancelOverlappedRequests");
-
     // Closing the socket ends running GetConnectionRequest work with
     // ND_CANCELED. It is closed after the lock is released.
     wil::unique_socket listenSocket;
@@ -3843,7 +3770,6 @@ HRESULT NdListener::CancelOverlappedRequests()
 
 HRESULT NdListener::GetOverlappedResult(OVERLAPPED* pOverlapped, BOOL wait)
 {
-    LOG_ENTRY("Listener::GetOverlappedResult");
     return NdOverlappedRequests::GetResult(
         pOverlapped,
         wait);
@@ -3851,16 +3777,15 @@ HRESULT NdListener::GetOverlappedResult(OVERLAPPED* pOverlapped, BOOL wait)
 
 HRESULT NdListener::Bind(const struct sockaddr* pAddress, ULONG cbAddress)
 {
-    LOG_ENTRY("Listener::Bind");
     LogSocketAddress(
         "Listener::Bind requested",
         pAddress,
         cbAddress);
     if (pAddress == nullptr || cbAddress > sizeof(m_listenAddr))
     {
-        LogToFile(
-            "[ndprov] Listener::Bind rejected: addressLength=%lu, "
-            "maximumLength=%zu\n",
+        NdTrace(
+            "Listener::Bind rejected: addressLength=%lu, "
+            "maximumLength=%zu",
             cbAddress,
             sizeof(m_listenAddr));
         return E_INVALIDARG;
@@ -3872,7 +3797,6 @@ HRESULT NdListener::Bind(const struct sockaddr* pAddress, ULONG cbAddress)
 
 HRESULT NdListener::Listen(ULONG backlog)
 {
-    LOG_ENTRY("Listener::Listen");
     LogSocketAddress(
         "Listener::Listen service endpoint",
         reinterpret_cast<const struct sockaddr *>(&m_listenAddr),
@@ -3883,10 +3807,10 @@ HRESULT NdListener::Listen(ULONG backlog)
 
     if (m_listenAddrLen != sizeof(m_listenAddr) || m_listenAddr.sin_family != AF_INET || m_listenAddr.sin_port == 0)
     {
-        LogToFile(
-            "[ndprov] Listener::Listen invalid service endpoint: "
+        NdTrace(
+            "Listener::Listen invalid service endpoint: "
             "addressLength=%lu, expectedLength=%zu, family=%u, "
-            "servicePort=%u\n",
+            "servicePort=%u",
             m_listenAddrLen,
             sizeof(m_listenAddr),
             static_cast<unsigned int>(m_listenAddr.sin_family),
@@ -3901,17 +3825,17 @@ HRESULT NdListener::Listen(ULONG backlog)
         cmListenAddress);
     if (FAILED(addressStatus))
     {
-        LogToFile(
-            "[ndprov] Listener::Listen invalid CM port mapping: "
-            "servicePort=%u, offset=%lu\n",
+        NdTrace(
+            "Listener::Listen invalid CM port mapping: "
+            "servicePort=%u, offset=%lu",
             static_cast<unsigned int>(ntohs(m_listenAddr.sin_port)),
             GetProviderConfiguration().cmPortOffset);
         return addressStatus;
     }
 
-    LogToFile(
-        "[ndprov] Listener::Listen attempting: servicePort=%u, "
-        "cmPort=%u, offset=%lu, requestedBacklog=%lu\n",
+    NdTrace(
+        "Listener::Listen attempting: servicePort=%u, "
+        "cmPort=%u, offset=%lu, requestedBacklog=%lu",
         static_cast<unsigned int>(ntohs(m_listenAddr.sin_port)),
         static_cast<unsigned int>(ntohs(cmListenAddress.sin_port)),
         GetProviderConfiguration().cmPortOffset,
@@ -3980,9 +3904,9 @@ HRESULT NdListener::Listen(ULONG backlog)
         return HRESULT_FROM_WIN32(error);
     }
 
-    LogToFile(
-        "[ndprov] Listener::Listen active: servicePort=%u, cmPort=%u, "
-        "backlog=%lu\n",
+    NdTrace(
+        "Listener::Listen active: servicePort=%u, cmPort=%u, "
+        "backlog=%lu",
         static_cast<unsigned int>(ntohs(m_listenAddr.sin_port)),
         static_cast<unsigned int>(ntohs(cmListenAddress.sin_port)),
         static_cast<ULONG>(listenBacklog));
@@ -3992,7 +3916,6 @@ HRESULT NdListener::Listen(ULONG backlog)
 
 HRESULT NdListener::GetLocalAddress(struct sockaddr* pAddress, ULONG* pcbAddress)
 {
-    LOG_ENTRY("Listener::GetLocalAddress");
     if (m_listenAddrLen == 0)
     {
         return E_NOTIMPL;
@@ -4036,8 +3959,6 @@ private:
 
 HRESULT NdListener::GetConnectionRequest(IUnknown* pConnector, OVERLAPPED* pOverlapped)
 {
-    LOG_ENTRY("Listener::GetConnectionRequest");
-
     if (pConnector == nullptr || pOverlapped == nullptr)
     {
         return E_INVALIDARG;
@@ -4193,7 +4114,6 @@ NdAdapter::Create(
 
 NdAdapter::~NdAdapter()
 {
-    LOG_ENTRY("Adapter::~NdAdapter (released device)");
 }
 
 HRESULT
@@ -4211,8 +4131,8 @@ NdAdapter::Open(
         &deviceContext);
     if (FAILED(status))
     {
-        LogToFile(
-            "[ndprov] Adapter::Open device context failed: 0x%08X\n",
+        NdTrace(
+            "Adapter::Open device context failed: 0x%08X",
             status);
         return status;
     }
@@ -4220,8 +4140,8 @@ NdAdapter::Open(
 
     RefreshAddresses();
 
-    LogToFile(
-        "[ndprov] Adapter::Open OK, LUID=0x%llX, addrs=%u\n",
+    NdTrace(
+        "Adapter::Open OK, LUID=0x%llX, addrs=%u",
         m_luid.Value,
         m_addrCount);
     return S_OK;
@@ -4268,8 +4188,6 @@ HRESULT NdAdapter::QueryInterface(REFIID riid, LPVOID* ppvObj)
 
 HRESULT NdAdapter::CreateOverlappedFile(HANDLE* phOverlappedFile)
 {
-    LOG_ENTRY("Adapter::CreateOverlappedFile");
-
     if (phOverlappedFile == nullptr)
     {
         return E_INVALIDARG;
@@ -4287,8 +4205,8 @@ HRESULT NdAdapter::CreateOverlappedFile(HANDLE* phOverlappedFile)
     if (!overlappedFile)
     {
         const HRESULT openStatus = HRESULT_FROM_WIN32(GetLastError());
-        LogToFile(
-            "[ndprov] Adapter::CreateOverlappedFile open failed: 0x%08X\n",
+        NdTrace(
+            "Adapter::CreateOverlappedFile open failed: 0x%08X",
             openStatus);
         return openStatus;
     }
@@ -4314,8 +4232,8 @@ HRESULT NdAdapter::CreateOverlappedFile(HANDLE* phOverlappedFile)
 
     if (FAILED(bindStatus))
     {
-        LogToFile(
-            "[ndprov] Adapter::CreateOverlappedFile bind failed: 0x%08X\n",
+        NdTrace(
+            "Adapter::CreateOverlappedFile bind failed: 0x%08X",
             bindStatus);
         return bindStatus;
     }
@@ -4333,7 +4251,6 @@ HRESULT NdAdapter::CreateOverlappedFile(HANDLE* phOverlappedFile)
 
 HRESULT NdAdapter::Query(ND2_ADAPTER_INFO* pInfo, ULONG* pcbInfo)
 {
-    LOG_ENTRY("Adapter::Query");
     if (*pcbInfo < sizeof(ND2_ADAPTER_INFO))
     {
         *pcbInfo = sizeof(ND2_ADAPTER_INFO);
@@ -4375,8 +4292,6 @@ HRESULT NdAdapter::Query(ND2_ADAPTER_INFO* pInfo, ULONG* pcbInfo)
 
 HRESULT NdAdapter::QueryAddressList(SOCKET_ADDRESS_LIST* pAddressList, ULONG* pcbAddressList)
 {
-    LOG_ENTRY("Adapter::QueryAddressList");
-
     RefreshAddresses();
 
     if (m_addrCount == 0)
@@ -4422,8 +4337,6 @@ HRESULT NdAdapter::QueryAddressList(SOCKET_ADDRESS_LIST* pAddressList, ULONG* pc
 HRESULT NdAdapter::CreateCompletionQueue(REFIID iid, HANDLE hOverlappedFile, ULONG queueDepth,
     USHORT group, KAFFINITY affinity, VOID** ppCompletionQueue)
 {
-    LOG_ENTRY("Adapter::CreateCompletionQueue");
-
     if (ppCompletionQueue == nullptr)
     {
         return E_INVALIDARG;
@@ -4473,14 +4386,14 @@ HRESULT NdAdapter::CreateCompletionQueue(REFIID iid, HANDLE hOverlappedFile, ULO
     const HRESULT createStatus = completionQueue->Initialize();
     if (FAILED(createStatus))
     {
-        LogToFile(
-            "[ndprov] Adapter::CreateCQ IOCTL failed: 0x%08X\n",
+        NdTrace(
+            "Adapter::CreateCQ IOCTL failed: 0x%08X",
             createStatus);
         return createStatus;
     }
 
-    LogToFile(
-        "[ndprov] Adapter::CreateCQ OK, id=%u, ring=%p, cap=%u\n",
+    NdTrace(
+        "Adapter::CreateCQ OK, id=%u, ring=%p, cap=%u",
         completionQueue->GetId(),
         static_cast<void *>(ringAddress),
         capacity);
@@ -4490,7 +4403,6 @@ HRESULT NdAdapter::CreateCompletionQueue(REFIID iid, HANDLE hOverlappedFile, ULO
 
 HRESULT NdAdapter::CreateMemoryRegion(REFIID iid, HANDLE hOverlappedFile, VOID** ppMemoryRegion)
 {
-    LOG_ENTRY("Adapter::CreateMemoryRegion");
     if (ppMemoryRegion == nullptr)
     {
         return E_INVALIDARG;
@@ -4509,7 +4421,6 @@ HRESULT NdAdapter::CreateMemoryRegion(REFIID iid, HANDLE hOverlappedFile, VOID**
 
 HRESULT NdAdapter::CreateMemoryWindow(REFIID iid, VOID** ppMemoryWindow)
 {
-    LOG_ENTRY("Adapter::CreateMemoryWindow");
     if (ppMemoryWindow != nullptr)
     {
         *ppMemoryWindow = nullptr;
@@ -4521,7 +4432,6 @@ HRESULT NdAdapter::CreateMemoryWindow(REFIID iid, VOID** ppMemoryWindow)
 HRESULT NdAdapter::CreateSharedReceiveQueue(REFIID iid, HANDLE hOverlappedFile, ULONG queueDepth,
     ULONG maxRequestSge, ULONG notifyThreshold, USHORT group, KAFFINITY affinity, VOID** ppSharedReceiveQueue)
 {
-    LOG_ENTRY("Adapter::CreateSharedReceiveQueue");
     return E_NOTIMPL;
 }
 
@@ -4529,8 +4439,6 @@ HRESULT NdAdapter::CreateQueuePair(REFIID iid, IUnknown* pReceiveCompletionQueue
     IUnknown* pInitiatorCompletionQueue, VOID* context, ULONG receiveQueueDepth, ULONG initiatorQueueDepth,
     ULONG maxReceiveRequestSge, ULONG maxInitiatorRequestSge, ULONG inlineDataSize, VOID** ppQueuePair)
 {
-    LOG_ENTRY("Adapter::CreateQueuePair");
-
     if (ppQueuePair == nullptr || receiveQueueDepth > NDPROV_MAX_QUEUE_DEPTH ||
         initiatorQueueDepth > RDMA_MAX_QUEUE_PAIR_REQUESTS)
     {
@@ -4593,7 +4501,7 @@ HRESULT NdAdapter::CreateQueuePair(REFIID iid, IUnknown* pReceiveCompletionQueue
         return E_OUTOFMEMORY;
     }
 
-    LogToFile("[ndprov] Adapter::CreateQP created unbound logical QP\n");
+    NdTrace("Adapter::CreateQP created unbound logical QP");
     *ppQueuePair = static_cast<IND2QueuePair *>(queuePair.release());
     return S_OK;
 }
@@ -4602,13 +4510,11 @@ HRESULT NdAdapter::CreateQueuePairWithSrq(REFIID iid, IUnknown* pReceiveCompleti
     IUnknown* pInitiatorCompletionQueue, IUnknown* pSharedReceiveQueue, VOID* context,
     ULONG initiatorQueueDepth, ULONG maxInitiatorRequestSge, ULONG inlineDataSize, VOID** ppQueuePair)
 {
-    LOG_ENTRY("Adapter::CreateQueuePairWithSrq");
     return E_NOTIMPL;
 }
 
 HRESULT NdAdapter::CreateConnector(REFIID iid, HANDLE hOverlappedFile, VOID** ppConnector)
 {
-    LOG_ENTRY("Adapter::CreateConnector");
     if (ppConnector == nullptr)
     {
         return E_INVALIDARG;
@@ -4633,7 +4539,6 @@ HRESULT NdAdapter::CreateConnector(REFIID iid, HANDLE hOverlappedFile, VOID** pp
 
 HRESULT NdAdapter::CreateListener(REFIID iid, HANDLE hOverlappedFile, VOID** ppListener)
 {
-    LOG_ENTRY("Adapter::CreateListener");
     if (ppListener == nullptr)
     {
         return E_INVALIDARG;
@@ -4697,7 +4602,7 @@ HRESULT NdProvider::EnumerateInterfaces()
 
     if (cr != CR_SUCCESS || bufferLen <= 1)
     {
-        LogToFile("[ndprov] No RDMA device interfaces found (cr=%u, len=%u)\n", cr, bufferLen);
+        NdTrace("No RDMA device interfaces found (cr=%u, len=%u)", cr, bufferLen);
         m_interfaceCount = 0;
         return S_OK;
     }
@@ -4717,7 +4622,7 @@ HRESULT NdProvider::EnumerateInterfaces()
 
     if (cr != CR_SUCCESS)
     {
-        LogToFile("[ndprov] CM_Get_Device_Interface_List failed: %u\n", cr);
+        NdTrace("CM_Get_Device_Interface_List failed: %u", cr);
         return HRESULT_FROM_WIN32(CM_MapCrToWin32Err(cr, ERROR_GEN_FAILURE));
     }
 
@@ -4751,22 +4656,22 @@ HRESULT NdProvider::EnumerateInterfaces()
         if (propertyResult == CR_SUCCESS && propertyType == DEVPROP_TYPE_UINT64)
         {
             m_luids[m_interfaceCount] = luid;
-            LogToFile("[ndprov] Interface[%u] LUID=0x%llX\n",
+            NdTrace("Interface[%u] LUID=0x%llX",
                 m_interfaceCount, luid.Value);
         }
         else
         {
-            LogToFile(
-                "[ndprov] Interface[%u] LUID query failed (cr=%u)\n",
+            NdTrace(
+                "Interface[%u] LUID query failed (cr=%u)",
                 m_interfaceCount,
                 propertyResult);
         }
 
-            LogToFile("[ndprov] Found interface[%u]: %ls\n", m_interfaceCount, current);
+            NdTrace("Found interface[%u]: %ls", m_interfaceCount, current);
         m_interfaceCount++;
         current += length + 1;
     }
-    LogToFile("[ndprov] Enumerated %u RDMA interfaces\n", m_interfaceCount);
+    NdTrace("Enumerated %u RDMA interfaces", m_interfaceCount);
     return S_OK;
 }
 
@@ -4784,8 +4689,6 @@ HRESULT NdProvider::QueryInterface(REFIID riid, LPVOID* ppvObj)
 
 HRESULT NdProvider::QueryAddressList(SOCKET_ADDRESS_LIST* pAddressList, ULONG* pcbAddressList)
 {
-    LOG_ENTRY("Provider::QueryAddressList");
-
     // Gather all IPv4 unicast addresses across all our adapters
     unique_unicast_ip_address_table table;
     const DWORD err = GetUnicastIpAddressTable(
@@ -4865,8 +4768,6 @@ HRESULT NdProvider::QueryAddressList(SOCKET_ADDRESS_LIST* pAddressList, ULONG* p
 
 HRESULT NdProvider::ResolveAddress(const struct sockaddr* pAddress, ULONG cbAddress, UINT64* pAdapterId)
 {
-    LOG_ENTRY("Provider::ResolveAddress");
-
     if (cbAddress < sizeof(struct sockaddr_in))
     {
         return ND_INVALID_ADDRESS;
@@ -4902,7 +4803,7 @@ HRESULT NdProvider::ResolveAddress(const struct sockaddr* pAddress, ULONG cbAddr
             if (row.InterfaceLuid.Value == m_luids[i].Value)
             {
                 *pAdapterId = static_cast<UINT64>(i + 1);
-                LogToFile("[ndprov] Provider::ResolveAddress %08X -> adapterId=%llu\n",
+                NdTrace("Provider::ResolveAddress %08X -> adapterId=%llu",
                     ntohl(pAddr->sin_addr.s_addr), *pAdapterId);
                 hr = S_OK;
                 goto done;
@@ -4916,8 +4817,6 @@ done:
 
 HRESULT NdProvider::OpenAdapter(REFIID iid, UINT64 adapterId, VOID** ppAdapter)
 {
-    LOG_ENTRY("Provider::OpenAdapter");
-
     if (ppAdapter == nullptr)
     {
         return E_INVALIDARG;
@@ -4926,7 +4825,7 @@ HRESULT NdProvider::OpenAdapter(REFIID iid, UINT64 adapterId, VOID** ppAdapter)
 
     if (adapterId == 0 || adapterId > m_interfaceCount)
     {
-        LogToFile("[ndprov] Provider::OpenAdapter - invalid adapterId %llu\n", adapterId);
+        NdTrace("Provider::OpenAdapter - invalid adapterId %llu", adapterId);
         return ND_INVALID_ADDRESS;
     }
 
@@ -4944,6 +4843,6 @@ HRESULT NdProvider::OpenAdapter(REFIID iid, UINT64 adapterId, VOID** ppAdapter)
     }
 
     *ppAdapter = static_cast<IND2Adapter *>(adapter);
-    LogToFile("[ndprov] Provider::OpenAdapter OK for interface[%u]\n", index);
+    NdTrace("Provider::OpenAdapter OK for interface[%u]", index);
     return S_OK;
 }

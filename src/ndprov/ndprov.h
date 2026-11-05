@@ -11,6 +11,8 @@
 
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <TraceLoggingProvider.h>
+#include <winmeta.h>
 #include <cfgmgr32.h>
 #include <iphlpapi.h>
 #include <netioapi.h>
@@ -36,14 +38,12 @@ DEFINE_GUID(CLSID_NdDummyProvider,
 
 using unique_unicast_ip_address_table = wil::unique_any<PMIB_UNICASTIPADDRESS_TABLE, decltype(&::FreeMibTable), &::FreeMibTable>;
 
-using unique_ndprov_log_file = wil::unique_any<FILE *, decltype(&::fclose), ::fclose>;
+TRACELOGGING_DECLARE_PROVIDER(g_ndprovTraceProvider);
 
 void
-LogToFile(
+NdTrace(
     _In_z_ _Printf_format_string_ const char *format,
     ...);
-
-#define LOG_ENTRY(name) LogToFile("[ndprov] %s\n", name)
 
 //
 // Helper base class for COM ref counting
