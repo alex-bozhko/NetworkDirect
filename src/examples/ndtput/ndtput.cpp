@@ -563,7 +563,7 @@ private:
         m_module = LoadLibraryExW(
             expandedPath.data(),
             nullptr,
-            0);
+            LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
         if (m_module == nullptr)
         {
             return HRESULT_FROM_WIN32(GetLastError());

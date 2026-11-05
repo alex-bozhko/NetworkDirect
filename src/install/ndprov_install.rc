@@ -1,0 +1,9 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+#define RC_FILE_TYPE VFT_APP
+#define RC_VERSION_INTERNAL_NAME "ndprov_install\0"
+#define RC_VERSION_ORIGINAL_FILE_NAME "ndprov_install.exe\0"
+#define RC_VERSION_FILE_DESCRIPTION "NetworkDirect USB4 provider installer\0"
+
+#include <bldver.rc>

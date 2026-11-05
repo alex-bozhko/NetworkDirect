@@ -15,7 +15,9 @@
 
 #include <winsock2.h>
 #include <ws2spi.h>
+#include <objbase.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <initguid.h>
 
 // {1F6A4848-5D04-4C77-B96C-4AB28A39449D}
@@ -32,8 +34,17 @@ DEFINE_GUID(CLSID_NdUsb4Provider,
 #define ND_VERSION_2 0x20000
 #endif
 
-static int InstallProvider(const WCHAR* dllPath)
+static int InstallProvider(const WCHAR* inputPath)
 {
+    // The Winsock catalog stores the path verbatim, so register an absolute path.
+    WCHAR dllPath[MAX_PATH] = { 0 };
+    DWORD pathLen = GetFullPathNameW(inputPath, ARRAYSIZE(dllPath), dllPath, nullptr);
+    if (pathLen == 0 || pathLen >= ARRAYSIZE(dllPath))
+    {
+        printf("Invalid DLL path: %ls\n", inputPath);
+        return 1;
+    }
+
     WSAPROTOCOL_INFOW protocolInfo = { 0 };
 
     // Service flags required by NetworkDirect
@@ -73,7 +84,8 @@ static int InstallProvider(const WCHAR* dllPath)
 
     // Verify the DLL can be loaded
     printf("Verifying DLL: %ls\n", dllPath);
-    HMODULE hMod = LoadLibraryExW(dllPath, nullptr, 0);
+    HMODULE hMod = LoadLibraryExW(dllPath, nullptr,
+        LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (hMod == nullptr)
     {
         printf("Failed to load DLL: error %lu\n", GetLastError());
@@ -155,15 +167,24 @@ static int UninstallProvider()
 static void DumpNdProviders()
 {
     DWORD len = 0;
-    INT err;
-    WSCEnumProtocols(nullptr, nullptr, &len, &err);
-    if (len == 0) return;
+    INT err = 0;
+    if (WSCEnumProtocols(nullptr, nullptr, &len, &err) != SOCKET_ERROR ||
+        err != WSAENOBUFS || len == 0)
+    {
+        printf("WSCEnumProtocols failed: error %d\n", err);
+        return;
+    }
 
     WSAPROTOCOL_INFOW* pProtos = (WSAPROTOCOL_INFOW*)malloc(len);
     if (!pProtos) return;
 
     INT count = WSCEnumProtocols(nullptr, pProtos, &len, &err);
-    if (count == SOCKET_ERROR) { free(pProtos); return; }
+    if (count == SOCKET_ERROR)
+    {
+        printf("WSCEnumProtocols failed: error %d\n", err);
+        free(pProtos);
+        return;
+    }
 
     printf("\n=== Existing NetworkDirect providers ===\n");
     for (INT i = 0; i < count; i++)
@@ -173,8 +194,11 @@ static void DumpNdProviders()
         if ((pProtos[i].dwServiceFlags1 & ndFlags) != ndFlags) continue;
         if (pProtos[i].iSocketType != -1) continue;
 
-        WCHAR guidStr[64];
-        StringFromGUID2(pProtos[i].ProviderId, guidStr, 64);
+        WCHAR guidStr[64] = { 0 };
+        if (StringFromGUID2(pProtos[i].ProviderId, guidStr, ARRAYSIZE(guidStr)) == 0)
+        {
+            wcscpy_s(guidStr, L"(invalid)");
+        }
 
         printf("  [%d] %ls\n", i, pProtos[i].szProtocol);
         printf("      GUID:          %ls\n", guidStr);

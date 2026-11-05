@@ -106,7 +106,8 @@ namespace NetworkDirect
         if (m_hProvider == nullptr)
         {
             HMODULE hProvider;
-            hProvider = ::LoadLibraryExW(m_Path, nullptr, 0);
+            hProvider = ::LoadLibraryExW(
+                m_Path, nullptr, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_SYSTEM32);
             if (hProvider == nullptr)
             {
                 return HRESULT_FROM_WIN32(::GetLastError());

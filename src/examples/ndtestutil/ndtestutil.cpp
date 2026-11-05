@@ -476,12 +476,9 @@ void NdTestServerBase::Accept(
         cbPrivateData,
         &m_Ov
     );
-    //printf("[ACCEPT] Accept returned 0x%08x\n", hr);
     if (hr == ND_PENDING)
     {
-        //printf("[ACCEPT] Waiting for overlapped result...\n");
         hr = m_pConnector->GetOverlappedResult(&m_Ov, TRUE);
-        //printf("[ACCEPT] GetOverlappedResult returned 0x%08x\n", hr);
     }
     LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
 }

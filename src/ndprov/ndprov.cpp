@@ -2811,11 +2811,11 @@ HRESULT NdConnector::Bind(const struct sockaddr* pAddress, ULONG cbAddress)
         "Conn::Bind requested",
         pAddress,
         cbAddress);
-    if (pAddress == nullptr || cbAddress > sizeof(m_localAddr))
+    if (pAddress == nullptr || cbAddress != sizeof(m_localAddr) || pAddress->sa_family != AF_INET)
     {
         NdTrace(
             "Conn::Bind rejected: addressLength=%lu, "
-            "maximumLength=%zu",
+            "expectedLength=%zu",
             cbAddress,
             sizeof(m_localAddr));
         return E_INVALIDARG;
@@ -2829,6 +2829,12 @@ HRESULT
 NdConnector::Initialize(
     HANDLE overlappedFile)
 {
+    const HRESULT status = StartWinsock(m_winsock);
+    if (FAILED(status))
+    {
+        return status;
+    }
+
     return m_requests.Initialize(overlappedFile);
 }
 
@@ -2987,7 +2993,8 @@ HRESULT NdConnector::Connect(IUnknown* pQueuePair, const struct sockaddr* pDestA
     ULONG inboundReadLimit, ULONG outboundReadLimit,
     const VOID* pPrivateData, ULONG cbPrivateData, OVERLAPPED* pOverlapped)
 {
-    if (pOverlapped == nullptr || pQueuePair == nullptr || pDestAddress == nullptr || cbDestAddress > sizeof(struct sockaddr_in))
+    if (pOverlapped == nullptr || pQueuePair == nullptr || pDestAddress == nullptr ||
+        cbDestAddress != sizeof(struct sockaddr_in) || pDestAddress->sa_family != AF_INET)
     {
         return E_INVALIDARG;
     }
@@ -3042,11 +3049,11 @@ NdConnector::ConnectWorker(
         pDestAddress,
         cbDestAddress);
 
-    if (pQueuePair == nullptr || pDestAddress == nullptr || cbDestAddress > sizeof(m_peerAddr) || m_socket)
+    if (pQueuePair == nullptr || pDestAddress == nullptr || cbDestAddress != sizeof(m_peerAddr) || m_socket)
     {
         NdTrace(
             "Conn::Connect rejected: queuePair=%p, "
-            "destination=%p, destinationLength=%lu, maximumLength=%zu, "
+            "destination=%p, destinationLength=%lu, expectedLength=%zu, "
             "socketActive=%u",
             static_cast<const void *>(pQueuePair),
             static_cast<const void *>(pDestAddress),
@@ -3574,37 +3581,71 @@ HRESULT NdConnector::GetPrivateData(VOID* pPrivateData, ULONG* pcbPrivateData)
     {
         return E_INVALIDARG;
     }
-    ULONG copyLen = min(*pcbPrivateData, m_peerPrivateDataLength);
-    if (pPrivateData && copyLen > 0)
+    const ULONG bufferLength = *pcbPrivateData;
+    ULONG copyLen = min(bufferLength, m_peerPrivateDataLength);
+    if (pPrivateData == nullptr && copyLen > 0)
+    {
+        return E_INVALIDARG;
+    }
+    if (copyLen > 0)
     {
         memcpy(pPrivateData, m_peerPrivateData, copyLen);
     }
     *pcbPrivateData = m_peerPrivateDataLength;
+    return bufferLength < m_peerPrivateDataLength ? ND_BUFFER_OVERFLOW : S_OK;
+}
+
+// Copies a stored address out to the caller of a GetXxxAddress method.
+static
+HRESULT
+CopyStoredAddress(
+    _In_ const struct sockaddr_in &address,
+    ULONG addressLength,
+    HRESULT noAddressResult,
+    _Out_writes_bytes_opt_(*pcbAddress) struct sockaddr *pAddress,
+    _Inout_ ULONG *pcbAddress)
+{
+    if (pcbAddress == nullptr)
+    {
+        return E_INVALIDARG;
+    }
+    if (addressLength == 0)
+    {
+        return noAddressResult;
+    }
+    if (*pcbAddress < addressLength)
+    {
+        *pcbAddress = addressLength;
+        return ND_BUFFER_OVERFLOW;
+    }
+    if (pAddress == nullptr)
+    {
+        return E_INVALIDARG;
+    }
+
+    memcpy(pAddress, &address, addressLength);
+    *pcbAddress = addressLength;
     return S_OK;
 }
 
 HRESULT NdConnector::GetLocalAddress(struct sockaddr* pAddress, ULONG* pcbAddress)
 {
-    if (m_localAddrLen == 0)
-    {
-        return E_NOTIMPL;
-    }
-    if (*pcbAddress < m_localAddrLen) { *pcbAddress = m_localAddrLen; return ND_BUFFER_OVERFLOW; }
-    memcpy(pAddress, &m_localAddr, m_localAddrLen);
-    *pcbAddress = m_localAddrLen;
-    return S_OK;
+    return CopyStoredAddress(
+        m_localAddr,
+        m_localAddrLen,
+        ND_CONNECTION_INVALID,
+        pAddress,
+        pcbAddress);
 }
 
 HRESULT NdConnector::GetPeerAddress(struct sockaddr* pAddress, ULONG* pcbAddress)
 {
-    if (m_peerAddrLen == 0)
-    {
-        return E_NOTIMPL;
-    }
-    if (*pcbAddress < m_peerAddrLen) { *pcbAddress = m_peerAddrLen; return ND_BUFFER_OVERFLOW; }
-    memcpy(pAddress, &m_peerAddr, m_peerAddrLen);
-    *pcbAddress = m_peerAddrLen;
-    return S_OK;
+    return CopyStoredAddress(
+        m_peerAddr,
+        m_peerAddrLen,
+        ND_CONNECTION_INVALID,
+        pAddress,
+        pcbAddress);
 }
 
 HRESULT NdConnector::NotifyDisconnect(OVERLAPPED* pOverlapped)
@@ -3743,6 +3784,12 @@ HRESULT
 NdListener::Initialize(
     HANDLE overlappedFile)
 {
+    const HRESULT status = StartWinsock(m_winsock);
+    if (FAILED(status))
+    {
+        return status;
+    }
+
     return m_requests.Initialize(overlappedFile);
 }
 
@@ -3783,11 +3830,11 @@ HRESULT NdListener::Bind(const struct sockaddr* pAddress, ULONG cbAddress)
         "Listener::Bind requested",
         pAddress,
         cbAddress);
-    if (pAddress == nullptr || cbAddress > sizeof(m_listenAddr))
+    if (pAddress == nullptr || cbAddress != sizeof(m_listenAddr) || pAddress->sa_family != AF_INET)
     {
         NdTrace(
             "Listener::Bind rejected: addressLength=%lu, "
-            "maximumLength=%zu",
+            "expectedLength=%zu",
             cbAddress,
             sizeof(m_listenAddr));
         return E_INVALIDARG;
@@ -3918,14 +3965,12 @@ HRESULT NdListener::Listen(ULONG backlog)
 
 HRESULT NdListener::GetLocalAddress(struct sockaddr* pAddress, ULONG* pcbAddress)
 {
-    if (m_listenAddrLen == 0)
-    {
-        return E_NOTIMPL;
-    }
-    if (*pcbAddress < m_listenAddrLen) { *pcbAddress = m_listenAddrLen; return ND_BUFFER_OVERFLOW; }
-    memcpy(pAddress, &m_listenAddr, m_listenAddrLen);
-    *pcbAddress = m_listenAddrLen;
-    return S_OK;
+    return CopyStoredAddress(
+        m_listenAddr,
+        m_listenAddrLen,
+        ND_INVALID_DEVICE_STATE,
+        pAddress,
+        pcbAddress);
 }
 
 // A GetConnectionRequest running on the thread pool. It keeps the listener and
@@ -4140,18 +4185,28 @@ NdAdapter::Open(
     }
     m_deviceContext.Attach(deviceContext);
 
-    RefreshAddresses();
+    struct sockaddr_in addresses[MAX_ADDRS];
+    ULONG addressCount = 0;
+    if (FAILED(GetAddresses(
+            addresses,
+            &addressCount)))
+    {
+        addressCount = 0;
+    }
 
     NdTrace(
         "Adapter::Open OK, LUID=0x%llX, addrs=%u",
         m_luid.Value,
-        m_addrCount);
+        addressCount);
     return S_OK;
 }
 
-HRESULT NdAdapter::RefreshAddresses()
+HRESULT
+NdAdapter::GetAddresses(
+    struct sockaddr_in *addresses,
+    ULONG *addressCount) const
 {
-    m_addrCount = 0;
+    *addressCount = 0;
 
     unique_unicast_ip_address_table table;
     const DWORD err = GetUnicastIpAddressTable(
@@ -4162,17 +4217,69 @@ HRESULT NdAdapter::RefreshAddresses()
         return HRESULT_FROM_WIN32(err);
     }
 
-    for (ULONG t = 0; t < table.get()->NumEntries && m_addrCount < MAX_ADDRS; t++)
+    ULONG count = 0;
+    for (ULONG t = 0; t < table.get()->NumEntries && count < MAX_ADDRS; t++)
     {
         const MIB_UNICASTIPADDRESS_ROW &row = table.get()->Table[t];
         if (row.InterfaceLuid.Value == m_luid.Value)
         {
-            memset(&m_addrs[m_addrCount], 0, sizeof(struct sockaddr_in));
-            m_addrs[m_addrCount].sin_family = AF_INET;
-            m_addrs[m_addrCount].sin_addr = row.Address.Ipv4.sin_addr;
-            m_addrCount++;
+            addresses[count] = {};
+            addresses[count].sin_family = AF_INET;
+            addresses[count].sin_addr = row.Address.Ipv4.sin_addr;
+            count++;
         }
     }
+
+    *addressCount = count;
+    return S_OK;
+}
+
+// Fills in a SOCKET_ADDRESS_LIST for IND2Adapter and IND2Provider
+// QueryAddressList.
+static
+HRESULT
+CopySocketAddressList(
+    _In_reads_(addressCount) const struct sockaddr_in *addresses,
+    ULONG addressCount,
+    _Out_writes_bytes_opt_(*pcbAddressList) SOCKET_ADDRESS_LIST *pAddressList,
+    _Inout_ ULONG *pcbAddressList)
+{
+    if (pcbAddressList == nullptr)
+    {
+        return E_INVALIDARG;
+    }
+
+    ULONG needed = sizeof(SOCKET_ADDRESS_LIST);
+    if (addressCount > 0)
+    {
+        needed += (addressCount - 1) * sizeof(SOCKET_ADDRESS) +
+            addressCount * sizeof(struct sockaddr_in);
+    }
+
+    if (pAddressList == nullptr || *pcbAddressList < needed)
+    {
+        *pcbAddressList = needed;
+        return ND_BUFFER_OVERFLOW;
+    }
+
+    *pcbAddressList = needed;
+    pAddressList->iAddressCount = static_cast<INT>(addressCount);
+    if (addressCount == 0)
+    {
+        return S_OK;
+    }
+
+    struct sockaddr_in *pAddrs = reinterpret_cast<struct sockaddr_in *>(
+        reinterpret_cast<BYTE *>(pAddressList) + sizeof(SOCKET_ADDRESS_LIST) +
+        (addressCount - 1) * sizeof(SOCKET_ADDRESS));
+
+    for (ULONG i = 0; i < addressCount; i++)
+    {
+        pAddrs[i] = addresses[i];
+        pAddressList->Address[i].lpSockaddr = reinterpret_cast<struct sockaddr *>(&pAddrs[i]);
+        pAddressList->Address[i].iSockaddrLength = sizeof(struct sockaddr_in);
+    }
+
     return S_OK;
 }
 
@@ -4294,46 +4401,26 @@ HRESULT NdAdapter::Query(ND2_ADAPTER_INFO* pInfo, ULONG* pcbInfo)
 
 HRESULT NdAdapter::QueryAddressList(SOCKET_ADDRESS_LIST* pAddressList, ULONG* pcbAddressList)
 {
-    RefreshAddresses();
-
-    if (m_addrCount == 0)
+    if (pcbAddressList == nullptr)
     {
-        ULONG needed = sizeof(SOCKET_ADDRESS_LIST);
-        if (pAddressList == nullptr || *pcbAddressList < needed)
-        {
-            *pcbAddressList = needed;
-            return ND_BUFFER_OVERFLOW;
-        }
-        *pcbAddressList = needed;
-        pAddressList->iAddressCount = 0;
-        return S_OK;
+        return E_INVALIDARG;
     }
 
-    ULONG needed = sizeof(SOCKET_ADDRESS_LIST)
-        + (m_addrCount - 1) * sizeof(SOCKET_ADDRESS)
-        + m_addrCount * sizeof(struct sockaddr_in);
-
-    if (pAddressList == nullptr || *pcbAddressList < needed)
+    struct sockaddr_in addresses[MAX_ADDRS];
+    ULONG addressCount = 0;
+    const HRESULT result = GetAddresses(
+        addresses,
+        &addressCount);
+    if (FAILED(result))
     {
-        *pcbAddressList = needed;
-        return ND_BUFFER_OVERFLOW;
+        return result;
     }
 
-    *pcbAddressList = needed;
-    pAddressList->iAddressCount = static_cast<INT>(m_addrCount);
-
-    struct sockaddr_in* pAddrs = reinterpret_cast<struct sockaddr_in*>(
-        reinterpret_cast<BYTE*>(pAddressList) + sizeof(SOCKET_ADDRESS_LIST)
-        + (m_addrCount - 1) * sizeof(SOCKET_ADDRESS));
-
-    for (ULONG i = 0; i < m_addrCount; i++)
-    {
-        pAddrs[i] = m_addrs[i];
-        pAddressList->Address[i].lpSockaddr = reinterpret_cast<struct sockaddr*>(&pAddrs[i]);
-        pAddressList->Address[i].iSockaddrLength = sizeof(struct sockaddr_in);
-    }
-
-    return S_OK;
+    return CopySocketAddressList(
+        addresses,
+        addressCount,
+        pAddressList,
+        pcbAddressList);
 }
 
 HRESULT NdAdapter::CreateCompletionQueue(REFIID iid, HANDLE hOverlappedFile, ULONG queueDepth,
@@ -4434,7 +4521,12 @@ HRESULT NdAdapter::CreateMemoryWindow(REFIID iid, VOID** ppMemoryWindow)
 HRESULT NdAdapter::CreateSharedReceiveQueue(REFIID iid, HANDLE hOverlappedFile, ULONG queueDepth,
     ULONG maxRequestSge, ULONG notifyThreshold, USHORT group, KAFFINITY affinity, VOID** ppSharedReceiveQueue)
 {
-    return E_NOTIMPL;
+    if (ppSharedReceiveQueue != nullptr)
+    {
+        *ppSharedReceiveQueue = nullptr;
+    }
+
+    return ND_NOT_SUPPORTED;
 }
 
 HRESULT NdAdapter::CreateQueuePair(REFIID iid, IUnknown* pReceiveCompletionQueue,
@@ -4512,7 +4604,12 @@ HRESULT NdAdapter::CreateQueuePairWithSrq(REFIID iid, IUnknown* pReceiveCompleti
     IUnknown* pInitiatorCompletionQueue, IUnknown* pSharedReceiveQueue, VOID* context,
     ULONG initiatorQueueDepth, ULONG maxInitiatorRequestSge, ULONG inlineDataSize, VOID** ppQueuePair)
 {
-    return E_NOTIMPL;
+    if (ppQueuePair != nullptr)
+    {
+        *ppQueuePair = nullptr;
+    }
+
+    return ND_NOT_SUPPORTED;
 }
 
 HRESULT NdAdapter::CreateConnector(REFIID iid, HANDLE hOverlappedFile, VOID** ppConnector)
@@ -4691,6 +4788,11 @@ HRESULT NdProvider::QueryInterface(REFIID riid, LPVOID* ppvObj)
 
 HRESULT NdProvider::QueryAddressList(SOCKET_ADDRESS_LIST* pAddressList, ULONG* pcbAddressList)
 {
+    if (pcbAddressList == nullptr)
+    {
+        return E_INVALIDARG;
+    }
+
     // Gather all IPv4 unicast addresses across all our adapters
     unique_unicast_ip_address_table table;
     const DWORD err = GetUnicastIpAddressTable(
@@ -4701,13 +4803,8 @@ HRESULT NdProvider::QueryAddressList(SOCKET_ADDRESS_LIST* pAddressList, ULONG* p
         return HRESULT_FROM_WIN32(err);
     }
 
-    // Count addresses that match our adapter LUIDs
-    struct MatchedAddr
-    {
-        struct sockaddr_in addr;
-        ULONG interfaceIndex;
-    };
-    MatchedAddr matched[64] = {};
+    // Collect addresses that match our adapter LUIDs
+    struct sockaddr_in matched[64] = {};
     ULONG matchCount = 0;
 
     for (ULONG t = 0; t < table.get()->NumEntries && matchCount < 64; t++)
@@ -4717,59 +4814,28 @@ HRESULT NdProvider::QueryAddressList(SOCKET_ADDRESS_LIST* pAddressList, ULONG* p
         {
             if (row.InterfaceLuid.Value == m_luids[i].Value)
             {
-                memset(&matched[matchCount].addr, 0, sizeof(struct sockaddr_in));
-                matched[matchCount].addr.sin_family = AF_INET;
-                matched[matchCount].addr.sin_addr = row.Address.Ipv4.sin_addr;
-                matched[matchCount].interfaceIndex = i;
+                matched[matchCount].sin_family = AF_INET;
+                matched[matchCount].sin_addr = row.Address.Ipv4.sin_addr;
                 matchCount++;
                 break;
             }
         }
     }
 
-    if (matchCount == 0)
-    {
-        // No addresses found — return empty list
-        ULONG needed = sizeof(SOCKET_ADDRESS_LIST);
-        if (pAddressList == nullptr || *pcbAddressList < needed)
-        {
-            *pcbAddressList = needed;
-            return ND_BUFFER_OVERFLOW;
-        }
-        *pcbAddressList = needed;
-        pAddressList->iAddressCount = 0;
-        return S_OK;
-    }
-
-    ULONG needed = sizeof(SOCKET_ADDRESS_LIST)
-        + (matchCount - 1) * sizeof(SOCKET_ADDRESS)
-        + matchCount * sizeof(struct sockaddr_in);
-
-    if (pAddressList == nullptr || *pcbAddressList < needed)
-    {
-        *pcbAddressList = needed;
-        return ND_BUFFER_OVERFLOW;
-    }
-
-    *pcbAddressList = needed;
-    pAddressList->iAddressCount = static_cast<INT>(matchCount);
-
-    struct sockaddr_in* pAddrs = reinterpret_cast<struct sockaddr_in*>(
-        reinterpret_cast<BYTE*>(pAddressList) + sizeof(SOCKET_ADDRESS_LIST)
-        + (matchCount - 1) * sizeof(SOCKET_ADDRESS));
-
-    for (ULONG i = 0; i < matchCount; i++)
-    {
-        pAddrs[i] = matched[i].addr;
-        pAddressList->Address[i].lpSockaddr = reinterpret_cast<struct sockaddr*>(&pAddrs[i]);
-        pAddressList->Address[i].iSockaddrLength = sizeof(struct sockaddr_in);
-    }
-
-    return S_OK;
+    return CopySocketAddressList(
+        matched,
+        matchCount,
+        pAddressList,
+        pcbAddressList);
 }
 
 HRESULT NdProvider::ResolveAddress(const struct sockaddr* pAddress, ULONG cbAddress, UINT64* pAdapterId)
 {
+    if (pAddress == nullptr || pAdapterId == nullptr)
+    {
+        return E_INVALIDARG;
+    }
+
     if (cbAddress < sizeof(struct sockaddr_in))
     {
         return ND_INVALID_ADDRESS;

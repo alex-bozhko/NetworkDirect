@@ -15,8 +15,7 @@
 #include <ws2spi.h>
 #include <new>
 
-static volatile LONG g_cServerLocks = 0;
-static volatile LONG g_cObjects = 0;
+volatile LONG g_objectCount = 0;
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
@@ -28,12 +27,9 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserv
         TraceLoggingRegister(g_ndprovTraceProvider);
         NdTrace("DLL loaded (pid=%lu)", GetCurrentProcessId());
         DisableThreadLibraryCalls(hModule);
-        WSADATA wsaData;
-        WSAStartup(MAKEWORD(2, 2), &wsaData);
         break;
     }
     case DLL_PROCESS_DETACH:
-        WSACleanup();
         NdTrace("DLL unloaded (pid=%lu)", GetCurrentProcessId());
         TraceLoggingUnregister(g_ndprovTraceProvider);
         break;
@@ -46,9 +42,10 @@ extern "C" HRESULT STDAPICALLTYPE DllGetClassObject(
     _In_ REFIID riid,
     _Outptr_ LPVOID* ppv)
 {
-    WCHAR guidStr[64], iidStr[64];
-    StringFromGUID2(rclsid, guidStr, 64);
-    StringFromGUID2(riid, iidStr, 64);
+    WCHAR guidStr[64]{};
+    WCHAR iidStr[64]{};
+    StringFromGUID2(rclsid, guidStr, ARRAYSIZE(guidStr));
+    StringFromGUID2(riid, iidStr, ARRAYSIZE(iidStr));
     NdTrace("DllGetClassObject: clsid=%ls, iid=%ls", guidStr, iidStr);
 
     if (ppv == nullptr)
@@ -66,7 +63,6 @@ extern "C" HRESULT STDAPICALLTYPE DllGetClassObject(
             return status;
         }
         *ppv = static_cast<IND2Provider *>(provider);
-        InterlockedIncrement(&g_cObjects);
         NdTrace("Returning IND2Provider OK");
         return S_OK;
     }
@@ -77,8 +73,9 @@ extern "C" HRESULT STDAPICALLTYPE DllGetClassObject(
 
 extern "C" HRESULT STDAPICALLTYPE DllCanUnloadNow()
 {
-    NdTrace("DllCanUnloadNow: objects=%ld, locks=%ld", g_cObjects, g_cServerLocks);
-    return (g_cObjects == 0 && g_cServerLocks == 0) ? S_OK : S_FALSE;
+    const LONG objectCount = InterlockedCompareExchange(&g_objectCount, 0, 0);
+    NdTrace("DllCanUnloadNow: objects=%ld", objectCount);
+    return objectCount == 0 ? S_OK : S_FALSE;
 }
 
 //

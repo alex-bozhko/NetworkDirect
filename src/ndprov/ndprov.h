@@ -46,6 +46,32 @@ NdTrace(
     _In_z_ _Printf_format_string_ const char *format,
     ...);
 
+// Number of live provider objects, checked by DllCanUnloadNow.
+extern volatile LONG g_objectCount;
+
+// Keeps Winsock started while an object owns sockets. Winsock must not be
+// started or cleaned up from DllMain.
+using unique_wsacleanup_call = wil::unique_call<decltype(&::WSACleanup), ::WSACleanup, false>;
+
+inline
+HRESULT
+StartWinsock(
+    _Inout_ unique_wsacleanup_call &cleanup)
+{
+    WSADATA data;
+    const int error = WSAStartup(
+        MAKEWORD(2, 2),
+        &data);
+    if (error != 0)
+    {
+        return HRESULT_FROM_WIN32(error);
+    }
+
+    cleanup.reset();
+    cleanup.activate();
+    return S_OK;
+}
+
 //
 // Helper base class for COM ref counting
 //
@@ -54,9 +80,23 @@ class ComBase
 protected:
     volatile LONG m_refCount = 1;
 
-    virtual ~ComBase() {}
+    ComBase()
+    {
+        InterlockedIncrement(&g_objectCount);
+    }
+
+    virtual ~ComBase()
+    {
+        InterlockedDecrement(&g_objectCount);
+    }
 
 public:
+    ComBase(
+        const ComBase &) = delete;
+    ComBase &
+    operator=(
+        const ComBase &) = delete;
+
     ULONG STDMETHODCALLTYPE AddRef() { return InterlockedIncrement(&m_refCount); }
     ULONG STDMETHODCALLTYPE Release()
     {
@@ -912,6 +952,9 @@ private:
 
     Microsoft::WRL::ComPtr<NdDeviceContext> m_deviceContext{};
 
+    // Declared before m_socket, so the socket is closed first.
+    unique_wsacleanup_call m_winsock{};
+
     // TCP socket for this connection, open only while it is set up.
     wil::unique_socket m_socket{};
 
@@ -995,6 +1038,8 @@ private:
         IUnknown *pConnector);
 
     Microsoft::WRL::ComPtr<NdDeviceContext> m_deviceContext{};
+    // Declared before m_socket, so the socket is closed first.
+    unique_wsacleanup_call m_winsock{};
     // Closed by CancelOverlappedRequests while workers accept on it. Guarded
     // by m_socketLock, as is m_canceled.
     SRWLOCK m_socketLock{};
@@ -1061,12 +1106,13 @@ private:
     UINT64 m_adapterId = 0;
     NET_LUID m_luid = {};
 
-    // Cached IP addresses for this adapter (queried from the LUID)
     static const ULONG MAX_ADDRS = 16;
-    struct sockaddr_in m_addrs[MAX_ADDRS] = {};
-    ULONG m_addrCount = 0;
 
-    HRESULT RefreshAddresses();
+    // Gets the current IPv4 addresses of this adapter's interface.
+    HRESULT
+    GetAddresses(
+        _Out_writes_to_(MAX_ADDRS, *addressCount) struct sockaddr_in *addresses,
+        _Out_ ULONG *addressCount) const;
 };
 
 

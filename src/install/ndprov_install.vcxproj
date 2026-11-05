@@ -23,6 +23,9 @@
       <AdditionalDependencies>ws2_32.lib;ole32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SubSystem>Console</SubSystem>
     </Link>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>..\examples;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
   </ItemDefinitionGroup>
   <PropertyGroup>
     <StagingOutputPath>$(MSBuildProjectName)</StagingOutputPath>
@@ -30,6 +33,9 @@
   </PropertyGroup>
   <ItemGroup>
     <ClCompile Include="ndprov_install.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ndprov_install.rc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
