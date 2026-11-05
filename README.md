@@ -32,9 +32,18 @@ NetworkDirect SDK is available in [Nuget](https://www.nuget.org/packages/network
 - **NetworkDirect v2 provider:** `ndprov.dll` implements the NDv2 provider interface to support RDMA over usb4 connection. It works in combination with usb4 drivers that are shipped separately.
 - **Provider management:** `ndprov_install.exe` installs, lists, and removes `ndprov.dll` from the Winsock provider catalog.
 - **Transfer samples:** `transfer_file.exe` transfers files over NetworkDirect, `transfer_file_sockets.exe` provides a TCP comparison, and `share_screen.exe` streams the desktop over NetworkDirect.
+- **Performance tools:** `ndlat.exe` measures send/receive round-trip latency percentiles and `ndtput.exe` measures multi-QP send/receive throughput.
 - **Test documentation:** [docs/test-suite-reference.md](./docs/test-suite-reference.md) describes the included examples and validation tools.
 
 ### Install `ndprov.dll`
+
+`ndprov`, `ndlat`, and `ndtput` use the [Windows Implementation Library (WIL)](https://github.com/microsoft/wil) NuGet package. Restore it before building:
+
+```bat
+nuget restore src\netdirect.sln -PackagesDirectory packages
+```
+
+The repo's `NuGet.Config` lists only nuget.org but keeps the feeds from your user-level config (`%APPDATA%\NuGet\NuGet.Config`). If nuget.org is unreachable from your machine, add an internal mirror there or pass `-Source <feed>`.
 
 Build the x64 provider and installer:
 

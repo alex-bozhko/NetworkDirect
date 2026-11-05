@@ -17,6 +17,8 @@ This document provides a comprehensive overview of all example and unit test pro
   - [ndpingpong — Send/Recv Latency (Bidirectional)](#ndpingpong--sendrecv-latency-bidirectional)
   - [ndrping — RDMA Read/Write Latency (Unidirectional)](#ndrping--rdma-readwrite-latency-unidirectional)
   - [ndrpingpong — RDMA Write Latency (Bidirectional)](#ndrpingpong--rdma-write-latency-bidirectional)
+  - [ndlat — Send/Recv Round-Trip Latency](#ndlat--sendrecv-round-trip-latency)
+  - [ndtput — Send/Recv Throughput](#ndtput--sendrecv-throughput)
 - [Unit Tests](#unit-tests)
   - [ndcq — Completion Queue Validation](#ndcq--completion-queue-validation)
   - [ndconn — Connection Scalability](#ndconn--connection-scalability)
@@ -412,6 +414,109 @@ ndrpingpong -c -p 192.168.1.10:54327
 
 ---
 
+### ndlat — Send/Recv Round-Trip Latency
+
+**Purpose:** Measures send/receive round-trip latency at a fixed message size and reports a percentile distribution. The client defines the workload and sends it to the server over a control exchange, so the server needs no workload options.
+
+**Usage:**
+```
+Server: ndlat -s [-1] <ip>[:port]
+Client: ndlat -c [-d] [-b] [-r] [-i N] [-w N] [-z bytes] [-u sec] [-o us] <ip>[:port]
+Options:
+  -s            - Start as server
+  -1            - Server exits after one client
+  -c            - Start as client
+  -d            - Bidirectional (both flows share one QP)
+  -b            - Blocking I/O (default: polling)
+  -r            - Realtime thread priority
+  -i <N>        - Measured iterations
+  -w <N>        - Warm-up iterations
+  -z <bytes>    - Message size
+  -u <sec>      - Periodic statistics interval
+  -o <us>       - Report per-phase timing of exchanges slower than this RTT
+  -h            - Help
+```
+
+**Defaults:**
+| Parameter | Value |
+|-----------|-------|
+| Port | 54324 |
+| Iterations | 1,000 |
+| Warm-up iterations | 0 |
+| Message size | 64 bytes |
+| Max message size | 4 MB |
+| Completion mode | Polling |
+
+**What it measures:**
+- RTT min / average / P50 / P90 / P99 / P99.9 / max / standard deviation (µs)
+- Exchange rate and data rate (request + echo bytes)
+- Optional per-cycle statistics (`-u`) and outlier phase breakdown (`-o`)
+
+**Requires:** Server + Client.
+
+**Examples:**
+```
+ndlat -s 192.168.1.10
+ndlat -c -z 4096 -i 100000 -w 1000 192.168.1.10
+```
+
+---
+
+### ndtput — Send/Recv Throughput
+
+**Purpose:** Measures streaming send/receive throughput over one or more queue pairs. The client defines the workload; the server mirrors it. Each run ends with a Last/Ack handshake so both sides agree on the final byte counts.
+
+**Usage:**
+```
+Server: ndtput -s [-1] <ip>[:port]
+Client: ndtput -c [-z bytes] [-q depth] [-t sec | -i msgs] [-w warmup] [-n qps] [-T] [-d] [-b] [-I] [-r] [-u sec] <ip>[:port]
+Options:
+  -s            - Start as server
+  -1            - Server exits after one client
+  -c            - Start as client
+  -z <bytes>    - Message size
+  -q <depth>    - Outstanding sends per QP
+  -t <sec>      - Measured streaming time
+  -i <msgs>     - Measured messages per QP and direction (instead of -t)
+  -w <warmup>   - Warm-up (seconds with -t, messages with -i)
+  -n <qps>      - Queue pairs (one connection and CQ each)
+  -T            - One thread per QP
+  -d            - Bidirectional on every QP
+  -b            - Blocking I/O (default: polling)
+  -I            - Blocking mode via an I/O completion port (not with -T)
+  -r            - Realtime priority
+  -u <sec>      - Periodic statistics interval
+  -h            - Help
+```
+
+**Defaults:**
+| Parameter | Value |
+|-----------|-------|
+| Port | 54326 |
+| Message size | 64 KB |
+| Max message size | 4 MB |
+| Queue depth | 16 (max 256) |
+| Duration | 5 s |
+| Warm-up | 1 s |
+| Queue pairs | 1 (max 3) |
+| Completion mode | Polling |
+
+**What it measures:**
+- TX/RX throughput per QP and in total (MB/s and Gb/s are decimal units)
+- Message rate
+- CPU time, as a percentage of one core
+- A machine-parsable `RESULT role=... dir=... MBps=... Gbps=...` line
+
+**Requires:** Server + Client.
+
+**Examples:**
+```
+ndtput -s 192.168.1.10
+ndtput -c -z 1048576 -q 32 -t 10 -n 2 -d 192.168.1.10
+```
+
+---
+
 ## Unit Tests
 
 ### ndcq — Completion Queue Validation
@@ -672,3 +777,5 @@ Static library providing base classes for test infrastructure:
 | ndrping | 54326 |
 | ndrpingpong | 54327 |
 | ndmval | 54331 |
+| ndlat | 54324 (same as ndping) |
+| ndtput | 54326 (same as ndrping) |

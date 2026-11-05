@@ -4,16 +4,31 @@
 //
 // ndping.cpp - NetworkDirect unidirectional send/recv ping test
 //
+// Local copy of microsoft/NetworkDirect src/examples/ndping (043f1bf), adapted
+// to the USB4 P2P receive requirements: the registered buffer is page aligned
+// with a page-multiple length, and each receive is sized for the message it
+// receives. The client also adds the credits the server returns, and each size
+// runs at most 10,000 iterations. Both sides must run this version.
+//
 
 #include "ndcommon.h"
 #include "ndtestutil.h"
-#include <logging.h>
+#include "logging.h"
 
 const USHORT x_DefaultPort = 54324;
 const SIZE_T x_MaxXfer = (4 * 1024 * 1024);
 const ULONG  x_HdrLen = 40;
 const SIZE_T x_MaxVolume = (500 * x_MaxXfer);
 const SIZE_T x_MaxIterations = 10000;
+const ULONG x_WarmupIterations = 1000;
+const ULONG x_CreditLen = 1;
+const SIZE_T x_PageSize = 4096;
+
+// Length of the registered buffer.
+const SIZE_T x_BufLen = x_MaxXfer;
+static_assert(
+    (x_BufLen % x_PageSize) == 0,
+    "The registered buffer length must be a page multiple");
 
 const LPCWSTR TESTNAME = L"ndping.exe";
 
@@ -32,6 +47,108 @@ void ShowUsage()
         "<port>          - Port number, (default: %hu)\n",
         x_DefaultPort
     );
+}
+
+// Number of messages the client sends of a given size.
+ULONG
+GetIterations(
+    ULONG szXfer)
+{
+    const SIZE_T iterations =
+        min(x_MaxIterations,
+            x_MaxVolume / szXfer);
+    return static_cast<ULONG>(iterations);
+}
+
+// Lengths of the client's messages, in order: the warmup messages, then the
+// messages of each transfer size, each group followed by a zero-length SYNC.
+// Every length after the last SYNC is zero.
+class SendSchedule
+{
+public:
+
+    ULONG
+    Next()
+    {
+        if (m_remaining != 0)
+        {
+            m_remaining--;
+            return m_size;
+        }
+
+        if (m_size != 0)
+        {
+            const ULONG nextSize = m_warmup ? 1 : (m_size << 1);
+            m_warmup = false;
+            m_size = (nextSize <= x_MaxXfer) ? nextSize : 0;
+            m_remaining = (m_size != 0) ? GetIterations(m_size) : 0;
+        }
+
+        return 0;
+    }
+
+private:
+
+    bool m_warmup = true;
+    ULONG m_size = x_HdrLen;
+    ULONG m_remaining = x_WarmupIterations;
+};
+
+// Lengths of the server's messages to the client, in order: a zero-length
+// acknowledgment of each SYNC, and a credit update after every
+// creditInterval messages the server receives.
+class ControlSchedule
+{
+public:
+
+    ControlSchedule() = default;
+
+    explicit ControlSchedule(
+        SIZE_T creditInterval)
+        : m_creditInterval(creditInterval)
+    {
+    }
+
+    ULONG
+    Next()
+    {
+        for (;;)
+        {
+            if (m_creditPending)
+            {
+                m_creditPending = false;
+                return x_CreditLen;
+            }
+
+            const ULONG length = m_sends.Next();
+            m_receivedCount++;
+            m_creditPending = (m_creditInterval != 0) && ((m_receivedCount % m_creditInterval) == 0);
+            if (length == 0)
+            {
+                return 0;
+            }
+        }
+    }
+
+private:
+
+    SendSchedule m_sends;
+    SIZE_T m_creditInterval = 0;
+    SIZE_T m_receivedCount = 0;
+    bool m_creditPending = false;
+};
+
+// Prepares a zero-length receive.
+DWORD
+PrepareEmptySge(
+    ND2_SGE *pSge,
+    char *pBuf,
+    UINT32 memoryToken)
+{
+    pSge[0].Buffer = pBuf;
+    pSge[0].BufferLength = 0;
+    pSge[0].MemoryRegionToken = memoryToken;
+    return 1;
 }
 
 class NdPingServer : public NdTestServerBase
@@ -60,8 +177,11 @@ public:
         NdPingServer::Init(v4Src);
         printf("[SERVER] Adapter initialized. Creating MR...\n");
         NdTestBase::CreateMR();
-        printf("[SERVER] Registering data buffer (%zu bytes)...\n", x_MaxXfer + x_HdrLen);
-        NdTestBase::RegisterDataBuffer(m_pBuf, x_MaxXfer + x_HdrLen, ND_MR_FLAG_ALLOW_LOCAL_WRITE);
+        printf("[SERVER] Registering data buffer (%zu bytes)...\n", x_BufLen);
+        NdTestBase::RegisterDataBuffer(
+            m_pBuf,
+            x_BufLen,
+            ND_MR_FLAG_ALLOW_LOCAL_WRITE);
 
         ND2_ADAPTER_INFO adapterInfo = { 0 };
         NdTestBase::GetAdapterInfo(&adapterInfo);
@@ -93,11 +213,10 @@ public:
             LOG_FAILURE_AND_EXIT(L"Failed to allocate sgl.", __LINE__);
         }
 
-        m_nSge = NdTestBase::PrepareSge(m_sgl, nSge,
-            m_pBuf, x_MaxXfer, x_HdrLen, m_pMr->GetLocalToken());
+        m_maxSge = nSge;
         for (DWORD i = 0; i < m_queueDepth; i++)
         {
-            NdTestBase::PostReceive(m_sgl, m_nSge);
+            PostScheduledReceive();
         }
 
         // advertise one less to account for incoming SYNC message
@@ -117,7 +236,7 @@ public:
         // Prepare an SGE for sending credit updates.
         ND2_SGE creditSge;
         creditSge.Buffer = m_pBuf;
-        creditSge.BufferLength = 1;
+        creditSge.BufferLength = x_CreditLen;
         creditSge.MemoryRegionToken = m_pMr->GetLocalToken();
 
         SIZE_T threshold = m_queueDepth / 2;
@@ -145,7 +264,7 @@ public:
                 }
 
                 // Repost receive
-                NdTestBase::PostReceive(m_sgl, m_nSge);
+                PostScheduledReceive();
 
                 // Check if credit update is needed.
                 if (--threshold == 0)
@@ -168,10 +287,33 @@ public:
         } while (hr == ND_SUCCESS);
     }
 
+    // Posts a receive sized for the client's next message.
+    void
+    PostScheduledReceive()
+    {
+        const ULONG length = m_schedule.Next();
+        const UINT32 token = m_pMr->GetLocalToken();
+        const DWORD nSge = (length != 0) ? NdTestBase::PrepareSge(
+                                               m_sgl,
+                                               m_maxSge,
+                                               m_pBuf,
+                                               length,
+                                               x_HdrLen,
+                                               token)
+                                         : PrepareEmptySge(
+                                               m_sgl,
+                                               m_pBuf,
+                                               token);
+        NdTestBase::PostReceive(
+            m_sgl,
+            nSge);
+    }
+
 private:
     DWORD m_queueDepth = 0;
     ND2_SGE* m_sgl = nullptr;
-    DWORD m_nSge = 0;
+    DWORD m_maxSge = 0;
+    SendSchedule m_schedule;
     char *m_pBuf = nullptr;
     bool m_bUseEvents = false;
     DWORD m_inlineSizeThreshold = 0;
@@ -209,12 +351,20 @@ public:
 
         printf("[CLIENT] Creating MR and registering buffer...\n");
         NdTestBase::CreateMR();
-        NdTestBase::RegisterDataBuffer(m_pBuf, x_MaxXfer + x_HdrLen,
-            ND_MR_FLAG_ALLOW_LOCAL_WRITE, ND_SUCCESS, "Register memory failed");
+        NdTestBase::RegisterDataBuffer(
+            m_pBuf,
+            x_BufLen,
+            ND_MR_FLAG_ALLOW_LOCAL_WRITE,
+            ND_SUCCESS,
+            "Register memory failed");
 
         ND2_ADAPTER_INFO adapterInfo;
         NdTestBase::GetAdapterInfo(&adapterInfo);
-        m_queueDepth = min(adapterInfo.MaxCompletionQueueDepth, adapterInfo.MaxInitiatorQueueDepth);
+        // The QP uses this depth for both its receive and initiator queues.
+        m_queueDepth =
+            min(adapterInfo.MaxCompletionQueueDepth,
+                min(adapterInfo.MaxInitiatorQueueDepth,
+                    adapterInfo.MaxReceiveQueueDepth));
         m_queueDepth = (queueDepth != 0) ? min(queueDepth, m_queueDepth) : m_queueDepth;
         m_inlineSizeThreshold = adapterInfo.InlineRequestThreshold;
         printf("[CLIENT] AdapterInfo: MaxCQDepth=%lu, MaxInitQDepth=%lu, InlineThreshold=%lu\n",
@@ -239,10 +389,13 @@ public:
         // get peer queue depth
         m_peerQueueDepth = 0;
         ULONG len = 0;
+        // The provider may also report the length with ND_SUCCESS.
         printf("[CLIENT] Getting private data from server...\n");
-        HRESULT hrPriv = m_pConnector->GetPrivateData(nullptr, &len);
-        printf("[CLIENT] GetPrivateData(nullptr) returned 0x%08x, len=%lu\n", hrPriv, len);
-        if (hrPriv != ND_BUFFER_OVERFLOW && (hrPriv != ND_SUCCESS || len == 0))
+        const HRESULT lengthResult = m_pConnector->GetPrivateData(
+            nullptr,
+            &len);
+        printf("[CLIENT] GetPrivateData(nullptr) returned 0x%08x, len=%lu\n", lengthResult, len);
+        if ((lengthResult != ND_BUFFER_OVERFLOW && lengthResult != ND_SUCCESS) || len < sizeof(ULONG))
         {
             printf("[CLIENT] Unexpected GetPrivateData result.\n");
             LOG_FAILURE_AND_EXIT(L"GetPrivateData failed\n", __LINE__);
@@ -266,8 +419,13 @@ public:
         // 'tmpBuf' is already checked for null, but CodeAnalysis throws a warning here
         // also, ignore unitialized memory warning for tmpBuf
 #pragma warning( suppress : 6001 6011 )
-        m_peerQueueDepth = m_nCredits = *((ULONG*)tmpBuf);
+        m_peerQueueDepth = m_nCredits = *static_cast<ULONG *>(tmpBuf);
         free(tmpBuf);
+
+        // The server advertises one less than its queue depth, and sends a
+        // credit update after every half queue depth of receives.
+        m_creditInterval = (m_peerQueueDepth + 1) / 2;
+        m_controlSchedule = ControlSchedule(m_creditInterval);
 
         NdTestClientBase::CompleteConnect();
         printf("[CLIENT] Connection fully established. Peer queue depth=%lu\n", m_peerQueueDepth);
@@ -280,8 +438,7 @@ public:
             LOG_FAILURE_AND_EXIT(L"Failed to allocate sgl.", __LINE__);
         }
 
-        m_numRecvSge = NdTestBase::PrepareSge(m_recvSgl, nMaxSge,
-            m_pBuf, x_MaxXfer, x_HdrLen, m_pMr->GetLocalToken());
+        m_maxSge = nMaxSge;
 
         printf("Using %u processors. Sender Frequency is %I64d\n\n"
             " %9s %9s %9s %7s %11s\n",
@@ -293,7 +450,7 @@ public:
         // warmup iterations
         DWORD numSendSges = NdTestBase::PrepareSge(m_sendSgl, nMaxSge,
             m_pBuf, x_HdrLen, x_HdrLen, m_pMr->GetLocalToken());
-        SendPings(1000, numSendSges, x_HdrLen);
+        SendPings(x_WarmupIterations, numSendSges, x_HdrLen);
         Sleep(1000);
 
         Timer timer;
@@ -303,15 +460,11 @@ public:
             numSendSges = NdTestBase::PrepareSge(m_sendSgl, nMaxSge,
                 m_pBuf, szXfer, x_HdrLen, m_pMr->GetLocalToken());
 
-            ULONG iterations = x_MaxIterations;
-            if (iterations > (x_MaxVolume / szXfer))
-            {
-                iterations = x_MaxVolume / szXfer;
-            }
+            const ULONG iterations = GetIterations(szXfer);
 
             cpu.Start();
             timer.Start();
-            HRESULT hr = SendPings(iterations, numSendSges, szXfer);
+            hr = SendPings(iterations, numSendSges, szXfer);
             if (FAILED(hr))
             {
                 LOG_FAILURE_AND_EXIT(L"Connection unexpectedly aborted.", __LINE__);
@@ -340,8 +493,8 @@ public:
         bool bGotSyncAck = false, bSyncSent = false;
 
         // post recvs - sync msg and flow control message
-        NdTestBase::PostReceive(m_recvSgl, m_numRecvSge);
-        NdTestBase::PostReceive(m_recvSgl, m_numRecvSge);
+        PostControlReceive();
+        PostControlReceive();
 
         size_t maxOutSends = m_maxOutSends;
         maxOutSends = (maxOutSends > iters) ? iters : maxOutSends;
@@ -383,8 +536,8 @@ public:
                         else
                         {
                             // got flow control message, update credits
-                            m_nCredits += (m_peerQueueDepth / 2);
-                            NdTestBase::PostReceive(m_recvSgl, m_numRecvSge);
+                            m_nCredits += m_creditInterval;
+                            PostControlReceive();
                         }
                     }
                     else
@@ -428,6 +581,28 @@ public:
         return numSent;
     }
 
+    // Posts a receive sized for the server's next message.
+    void
+    PostControlReceive()
+    {
+        const ULONG length = m_controlSchedule.Next();
+        const UINT32 token = m_pMr->GetLocalToken();
+        const DWORD nSge = (length != 0) ? NdTestBase::PrepareSge(
+                                               m_recvSgl,
+                                               m_maxSge,
+                                               m_pBuf,
+                                               length,
+                                               x_HdrLen,
+                                               token)
+                                         : PrepareEmptySge(
+                                               m_recvSgl,
+                                               m_pBuf,
+                                               token);
+        NdTestBase::PostReceive(
+            m_recvSgl,
+            nSge);
+    }
+
 private:
     char *m_pBuf = nullptr;
     DWORD m_queueDepth = 0;
@@ -436,8 +611,10 @@ private:
     bool m_bUseEvents = false;
     ULONG m_nCredits = 0;
     ULONG m_peerQueueDepth = 0;
+    ULONG m_creditInterval = 0;
     ND2_SGE *m_sendSgl = nullptr, *m_recvSgl = nullptr;
-    DWORD m_numRecvSge = 0;
+    DWORD m_maxSge = 0;
+    ControlSchedule m_controlSchedule;
     DWORD m_inlineSizeThreshold = 0;
 };
 
@@ -559,7 +736,11 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
         v4Server.sin_addr.S_un.S_un_b.s_b3, v4Server.sin_addr.S_un.S_un_b.s_b4,
         ntohs(v4Server.sin_port));
 
-    char *pBuf = static_cast<char *>(HeapAlloc(GetProcessHeap(), 0, x_MaxXfer + x_HdrLen));
+    char *pBuf = static_cast<char *>(VirtualAlloc(
+        nullptr,
+        x_BufLen,
+        MEM_COMMIT | MEM_RESERVE,
+        PAGE_READWRITE));
     if (!pBuf)
     {
         LOG_FAILURE_AND_EXIT(L"Failed to allocate data buffer.", __LINE__);
@@ -573,15 +754,15 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
     else
     {
         struct sockaddr_in v4Src;
-        SIZE_T len = sizeof(v4Src);
-        HRESULT hr = NdResolveAddress(
-            (const struct sockaddr*)&v4Server,
+        SIZE_T srcLen = sizeof(v4Src);
+        hr = NdResolveAddress(
+            reinterpret_cast<const sockaddr *>(&v4Server),
             sizeof(v4Server),
-            (struct sockaddr*)&v4Src,
-            &len);
+            reinterpret_cast<sockaddr *>(&v4Src),
+            &srcLen);
         if (FAILED(hr))
         {
-            HeapFree(GetProcessHeap(), 0, pBuf);
+            VirtualFree(pBuf, 0, MEM_RELEASE);
             LOG_FAILURE_HRESULT_AND_EXIT(hr, L"NdResolveAddress failed with %08x", __LINE__);
         }
         printf("[CLIENT] NdResolveAddress: local addr=%d.%d.%d.%d\n",
@@ -593,7 +774,7 @@ int __cdecl _tmain(int argc, TCHAR* argv[])
         client.RunTest(v4Src, v4Server, 0, nSge);
     }
 
-    HeapFree(GetProcessHeap(), 0, pBuf);
+    VirtualFree(pBuf, 0, MEM_RELEASE);
     hr = NdCleanup();
     if (FAILED(hr))
     {

@@ -1,3 +1,5 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+
 //
 // dllmain.cpp - DLL entry points for the NetworkDirect dummy provider
 //
@@ -17,6 +19,7 @@ static volatile LONG g_cObjects = 0;
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
 {
+    UNREFERENCED_PARAMETER(lpReserved);
     switch (ul_reason_for_call)
     {
     case DLL_PROCESS_ATTACH:
@@ -53,12 +56,13 @@ extern "C" HRESULT STDAPICALLTYPE DllGetClassObject(
 
     if (InlineIsEqualGUID(riid, IID_IND2Provider))
     {
-        NdProvider* pProvider = new (std::nothrow) NdProvider();
-        if (pProvider == nullptr)
+        NdProvider *provider{ nullptr };
+        const HRESULT status = NdProvider::Create(&provider);
+        if (FAILED(status))
         {
-            return E_OUTOFMEMORY;
+            return status;
         }
-        *ppv = static_cast<IND2Provider*>(pProvider);
+        *ppv = static_cast<IND2Provider *>(provider);
         InterlockedIncrement(&g_cObjects);
         LogToFile("[ndprov] Returning IND2Provider OK\n");
         return S_OK;
@@ -85,5 +89,10 @@ extern "C" int WSPAPI WSPStartup(
     WSPUPCALLTABLE UpcallTable,
     LPWSPPROC_TABLE lpProcTable)
 {
+    UNREFERENCED_PARAMETER(wVersionRequested);
+    UNREFERENCED_PARAMETER(lpWSPData);
+    UNREFERENCED_PARAMETER(lpProtocolInfo);
+    UNREFERENCED_PARAMETER(UpcallTable);
+    UNREFERENCED_PARAMETER(lpProcTable);
     return WSAEPROCLIM;
 }

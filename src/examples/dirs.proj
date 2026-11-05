@@ -4,12 +4,14 @@
   <ItemGroup>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndadapterinfo\ndadapterinfo.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndcat\ndcat.vcxproj"/>
+    <ProjectFile Include="$(MSBuildThisFileDirectory)ndlat\ndlat.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndmrlat\ndmrlat.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndmrrate\ndmrrate.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndping\ndping.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndpingpong\ndpingpong.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndrping\ndrping.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndrpingpong\ndrpingpong.vcxproj"/>
+    <ProjectFile Include="$(MSBuildThisFileDirectory)ndtput\ndtput.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndtestutil\ndtestutil.vcxproj"/>
   </ItemGroup>
   <Import Project="$(TraversalTargets)" Condition=" '$(CBTModulesRestored)' == 'true' " />

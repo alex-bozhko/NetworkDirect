@@ -310,7 +310,12 @@ void NdTestBase::DisconnectConnector()
 {
     if (m_pConnector != nullptr)
     {
-        m_pConnector->Disconnect(&m_Ov);
+        // Waits, because the next request reuses the OVERLAPPED.
+        const HRESULT hr = m_pConnector->Disconnect(&m_Ov);
+        if (hr == ND_PENDING)
+        {
+            m_pConnector->GetOverlappedResult(&m_Ov, TRUE);
+        }
     }
 }
 
