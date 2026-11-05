@@ -13,8 +13,7 @@ NdTestBase::NdTestBase() :
     m_pQp(nullptr),
     m_pConnector(nullptr),
     m_hAdapterFile(nullptr),
-    m_Buf(nullptr),
-    m_pMw(nullptr)
+    m_Buf(nullptr)
 {
     RtlZeroMemory(&m_Ov, sizeof(m_Ov));
 }
@@ -25,11 +24,6 @@ NdTestBase::~NdTestBase()
     if (m_pMr != nullptr)
     {
         m_pMr->Release();
-    }
-
-    if (m_pMw != nullptr)
-    {
-        m_pMw->Release();
     }
 
     if (m_pCq != nullptr)
@@ -115,45 +109,6 @@ void NdTestBase::RegisterDataBuffer(
         hr = m_pMr->GetOverlappedResult(&m_Ov, TRUE);
     }
     LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
-}
-
-void NdTestBase::CreateMW(HRESULT expectedResult, const char* errorMessage)
-{
-    HRESULT hr = m_pAdapter->CreateMemoryWindow(
-        IID_IND2MemoryWindow,
-        reinterpret_cast<VOID**>(&m_pMw)
-    );
-
-    LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
-}
-
-void NdTestBase::InvalidateMW(HRESULT expectedResult, const char* errorMessage)
-{
-    HRESULT hr;
-    hr = m_pQp->Invalidate(nullptr, m_pMw, 0);
-    LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
-}
-
-void NdTestBase::Bind(DWORD bufferLength, ULONG flags, void *context, HRESULT expectedResult, const char* errorMessage)
-{
-    Bind(m_Buf, bufferLength, flags, context, expectedResult, errorMessage);
-}
-
-void NdTestBase::Bind(const void *pBuf, DWORD bufferLength, ULONG flags, void *context, HRESULT expectedResult, const char* errorMessage)
-{
-#pragma warning(suppress: 6001)
-    if (m_pQp->Bind(context, m_pMr, m_pMw, pBuf, bufferLength, flags) != ND_SUCCESS)
-    {
-        LogErrorExit("Bind failed\n", __LINE__);
-    }
-
-    ND2_RESULT ndRes;
-    NdTestBase::WaitForCompletion(&ndRes);
-    LogIfErrorExit(ndRes.Status, expectedResult, errorMessage, -1);
-    if (ndRes.Status == ND_SUCCESS && ndRes.RequestContext != context)
-    {
-        LogErrorExit("Invalid context", __LINE__);
-    }
 }
 
 void NdTestBase::CreateCQ(DWORD depth, HRESULT expectedResult, const char* errorMessage)
@@ -344,36 +299,6 @@ void NdTestBase::PostReceive(
     const char* errorMessage)
 {
     HRESULT hr = m_pQp->Receive(requestContext, Sge, nSge);
-    LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
-}
-
-void NdTestBase::Write(
-    const ND2_SGE* Sge,
-    const ULONG nSge,
-    UINT64 remoteAddress,
-    UINT32 remoteToken,
-    DWORD flag,
-    void *requestContext,
-    HRESULT expectedResult,
-    const char* errorMessage)
-{
-    HRESULT hr;
-    hr = m_pQp->Write(requestContext, Sge, nSge, remoteAddress, remoteToken, flag);
-    LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
-}
-
-void NdTestBase::Read(
-    const ND2_SGE* Sge,
-    const ULONG nSge,
-    UINT64 remoteAddress,
-    UINT32 remoteToken,
-    DWORD flag,
-    void *requestContext,
-    HRESULT expectedResult,
-    const char* errorMessage)
-{
-    HRESULT hr;
-    hr = m_pQp->Read(requestContext, Sge, nSge, remoteAddress, remoteToken, flag);
     LogIfErrorExit(hr, expectedResult, errorMessage, __LINE__);
 }
 

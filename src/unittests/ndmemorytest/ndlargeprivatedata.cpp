@@ -66,7 +66,7 @@ void NdLargePrivateDataClient::RunTest(
     //prep
     NdTestBase::Init(v4Src);
     NdTestBase::CreateMR();
-    NdTestBase::RegisterDataBuffer(x_MaxXfer, ND_MR_FLAG_ALLOW_REMOTE_READ | ND_MR_FLAG_ALLOW_REMOTE_WRITE);
+    NdTestBase::RegisterDataBuffer(x_MaxXfer, ND_MR_FLAG_ALLOW_LOCAL_WRITE);
 
     NdTestBase::CreateCQ(nSge, ND_SUCCESS);
     NdTestBase::CreateConnector();

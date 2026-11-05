@@ -31,7 +31,6 @@ NetworkDirect SDK is available in [Nuget](https://www.nuget.org/packages/network
 
 - **NetworkDirect v2 provider:** `ndprov.dll` implements the NDv2 provider interface to support RDMA over usb4 connection. It works in combination with usb4 drivers that are shipped separately.
 - **Provider management:** `ndprov_install.exe` installs, lists, and removes `ndprov.dll` from the Winsock provider catalog.
-- **Transfer samples:** `transfer_file.exe` transfers files over NetworkDirect, `transfer_file_sockets.exe` provides a TCP comparison, and `share_screen.exe` streams the desktop over NetworkDirect.
 - **Performance tools:** `ndlat.exe` measures send/receive round-trip latency percentiles and `ndtput.exe` measures multi-QP send/receive throughput.
 - **Test documentation:** [docs/test-suite-reference.md](./docs/test-suite-reference.md) describes the included examples and validation tools.
 
@@ -63,17 +62,6 @@ Keep `ndprov.dll` at the registered path. To list NetworkDirect providers or rem
 out\Release-x64\ndprov_install\ndprov_install.exe dump
 out\Release-x64\ndprov_install\ndprov_install.exe uninstall
 ```
-
-### Run the transfer samples
-
-Start the receiver first, then the sender:
-
-```bat
-transfer_file.exe -s <server-ip>
-transfer_file.exe -c <server-ip> <file-path>
-```
-
-Use `transfer_file_sockets.exe` with the same `-s` and `-c` arguments for a TCP baseline. Run `share_screen.exe -s <server-ip>` on the display host and `share_screen.exe -c <server-ip>` on the capture host.
 
 ## Setting up a USB4 test bed for RDMA
 

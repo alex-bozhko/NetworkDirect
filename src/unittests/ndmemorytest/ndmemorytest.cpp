@@ -14,19 +14,13 @@ enum TestName
     ND_DUAL_CONECTION_TEST,
     ND_DUAL_LISTEN_TEST,
     ND_INVALID_IP_TEST,
-    ND_INVALID_READ_TEST,
-    ND_INVALID_WRITE_TEST,
     ND_LARGE_PRIVATEDATA_TEST,
     ND_LARGE_QP_TEST,
-    ND_MR_DEREGISTER_TEST,
     ND_MR_INVALID_BUFFER_TEST,
-    ND_OVER_READ_TEST,
-    ND_OVER_WRITE_TEST,
     ND_QP_MAX_TEST,
     ND_RECEIVE_FLUSHQP_TEST,
     ND_SEND_NO_RECEIVE_TEST,
     ND_RECEIVE_CONN_CLOSED_TEST,
-    ND_WRITE_VIOLATION_TEST,
     ND_TEST_ERROR
 };
 
@@ -48,19 +42,13 @@ void ShowUsage()
         "\t                 - NdDualConnection\n"
         "\t                 - NdDualListen\n"
         "\t                 - NdInvalidIP\n"
-        "\t                 - NdInvalidRead\n"
-        "\t                 - NdInvalidWrite\n"
         "\t                 - NdLargePrivateData\n"
         "\t                 - NdLargeQPDepth\n"
-        "\t                 - NdMRDeregister\n"
         "\t                 - NdMRInvalidBuffer\n"
-        "\t                 - NdOverRead\n"
-        "\t                 - NdOverWrite\n"
         "\t                 - NdQpMax\n"
         "\t                 - NdReceiveFlushQP\n"
         "\t                 - NdSendNoReceive\n"
         "\t                 - NdReceiveConnClosed\n"
-        "\t                 - NdWriteViolation\n"
         "<ip>            - IPv4 Address\n"
         "<port>          - Port number, (default: %hu)\n",
         x_DefaultPort
@@ -99,16 +87,6 @@ TestName ParseTestName(const TCHAR* testName)
         return ND_INVALID_IP_TEST;
     }
 
-    if (_tcsicmp(testName, _T("NdInvalidRead")) == 0)
-    {
-        return ND_INVALID_READ_TEST;
-    }
-
-    if (_tcsicmp(testName, _T("NdInvalidWrite")) == 0)
-    {
-        return ND_INVALID_WRITE_TEST;
-    }
-
     if (_tcsicmp(testName, _T("NdLargePrivateData")) == 0)
     {
         return ND_LARGE_PRIVATEDATA_TEST;
@@ -119,24 +97,9 @@ TestName ParseTestName(const TCHAR* testName)
         return ND_LARGE_QP_TEST;
     }
 
-    if (_tcsicmp(testName, _T("NdMRDeregister")) == 0)
-    {
-        return ND_MR_DEREGISTER_TEST;
-    }
-
     if (_tcsicmp(testName, _T("NdMRInvalidBuffer")) == 0)
     {
         return ND_MR_INVALID_BUFFER_TEST;
-    }
-
-    if (_tcsicmp(testName, _T("NdOverRead")) == 0)
-    {
-        return ND_OVER_READ_TEST;
-    }
-
-    if (_tcsicmp(testName, _T("NdOverWrite")) == 0)
-    {
-        return ND_OVER_WRITE_TEST;
     }
 
     if (_tcsicmp(testName, _T("NdQpMax")) == 0)
@@ -159,11 +122,6 @@ TestName ParseTestName(const TCHAR* testName)
         return ND_RECEIVE_CONN_CLOSED_TEST;
     }
 
-    if (_tcsicmp(testName, _T("NdWriteViolation")) == 0)
-    {
-        return ND_WRITE_VIOLATION_TEST;
-    }
-
     return ND_TEST_ERROR;
 }
 
@@ -174,7 +132,7 @@ int __cdecl  _tmain(int argc, TCHAR* argv[])
     DWORD nSge = 2, nPipeline = 64;
 
     struct sockaddr_in v4Server = { 0 };
-    TestName testName = ND_INVALID_READ_TEST;
+    TestName testName = ND_TEST_ERROR;
     const TCHAR *testNameStr = nullptr;
 
     WSADATA wsaData;
@@ -318,16 +276,6 @@ int __cdecl  _tmain(int argc, TCHAR* argv[])
         client = new(std::nothrow) NdInvalidIPClient;
         break;
 
-    case ND_INVALID_READ_TEST:
-        server = new(std::nothrow) NdInvalidReadServer;
-        client = new(std::nothrow) NdInvalidReadWriteClient(testNameStr);
-        break;
-
-    case ND_INVALID_WRITE_TEST:
-        server = new(std::nothrow) NdInvalidWriteServer;
-        client = new(std::nothrow) NdInvalidReadWriteClient(testNameStr);
-        break;
-
     case ND_LARGE_PRIVATEDATA_TEST:
         server = new(std::nothrow) NdLargePrivateDataServer;
         client = new(std::nothrow) NdLargePrivateDataClient;
@@ -338,24 +286,9 @@ int __cdecl  _tmain(int argc, TCHAR* argv[])
         client = new(std::nothrow) NdLargeQPDepthClient;
         break;
 
-    case ND_MR_DEREGISTER_TEST:
-        server = new(std::nothrow) NdMRDeregisterServer;
-        client = new(std::nothrow) NdMRDeregisterClient;
-        break;
-
     case ND_MR_INVALID_BUFFER_TEST:
         server = new(std::nothrow) NdMRInvalidBufferServer;
         client = new(std::nothrow) NdMRInvalidBufferClient;
-        break;
-
-    case ND_OVER_READ_TEST:
-        server = new(std::nothrow) NdOverReadServer;
-        client = new(std::nothrow) NdOverReadWriteClient(testNameStr);
-        break;
-
-    case ND_OVER_WRITE_TEST:
-        server = new(std::nothrow) NdOverWriteServer;
-        client = new(std::nothrow) NdOverReadWriteClient(testNameStr);
         break;
 
     case ND_QP_MAX_TEST:
@@ -376,11 +309,6 @@ int __cdecl  _tmain(int argc, TCHAR* argv[])
     case ND_RECEIVE_CONN_CLOSED_TEST:
         server = new(std::nothrow) NdReceiveConnectorClosedServer;
         client = new(std::nothrow) NdReceiveConnectorClosedClient;
-        break;
-
-    case ND_WRITE_VIOLATION_TEST:
-        server = new(std::nothrow) NdWriteViolationServer;
-        client = new(std::nothrow) NdWriteViolationClient;
         break;
 
     default:

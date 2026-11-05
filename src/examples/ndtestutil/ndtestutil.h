@@ -82,7 +82,6 @@ protected:
     HANDLE m_hAdapterFile;
     DWORD m_Buf_Len = 0;
     void* m_Buf;
-    IND2MemoryWindow* m_pMw;
     OVERLAPPED m_Ov;
 
 protected:
@@ -92,16 +91,6 @@ protected:
     //Initialize the adaptor, overlapped handler
     void Init(
         _In_ const struct sockaddr_in& v4Src);
-
-    //Create a memowy window
-    void CreateMW(
-        HRESULT expectedResult = ND_SUCCESS,
-        const char* errorMessage = "IND2Adapter::CreateMemoryWindow failed");
-
-    //invalidate a memory window
-    void InvalidateMW(
-        HRESULT expectedResult = ND_SUCCESS,
-        const char* errorMessage = "IND2QueuePair:InvalidateMemoryWindow failed");
 
     // get adapter info
     void GetAdapterInfo(
@@ -211,28 +200,6 @@ protected:
         void* requestContext = nullptr,
         const char* errorMessage = "IND2QueuePair::Send failed");
 
-    //Write to remote peer
-    void Write(
-        const ND2_SGE* Sge,
-        const ULONG nSge,
-        UINT64 remoteAddress,
-        UINT32 remoteToken,
-        DWORD flag,
-        void *requestContext = nullptr,
-        HRESULT expectedResult = ND_SUCCESS,
-        const char* errorMessage = "IND2QueuePair::Write failed");
-
-    //Read from remote peer
-    void Read(
-        const ND2_SGE* Sge,
-        const ULONG nSge,
-        UINT64 remoteAddress,
-        UINT32 remoteToken,
-        DWORD flag,
-        void *requestContext = nullptr,
-        HRESULT expectedResult = ND_SUCCESS,
-        const char* errorMessage = "IND2QueuePair::Read failed");
-
     // Wait for event notification
     void WaitForEventNotification();
 
@@ -251,23 +218,6 @@ protected:
 
     // wait for CQ entry and check context
     void WaitForCompletionAndCheckContext(void *expectedContext);
-
-    //bind buffer to MW
-    void Bind(
-        DWORD bufferLength,
-        ULONG type,
-        void *context = nullptr,
-        HRESULT expectedResult = ND_SUCCESS,
-        const char* errorMessage = "IND2QueuePair::Bind failed");
-
-    //bind buffer to MW
-    void Bind(
-        const void *pBuf,
-        DWORD bufferLength,
-        ULONG flags,
-        void *context = nullptr,
-        HRESULT expectedResult = ND_SUCCESS,
-        const char* errorMessage = "IND2QueuePair::Bind failed");
 
     //tear down, no error check
     void Shutdown();

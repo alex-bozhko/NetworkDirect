@@ -28,18 +28,14 @@
     <ClCompile Include=".\nddualconnection.cpp" />
     <ClCompile Include=".\ndduallisten.cpp" />
     <ClCompile Include=".\ndinvalidip.cpp" />
-    <ClCompile Include=".\ndinvalidreadwrite.cpp" />
     <ClCompile Include=".\ndlargeprivatedata.cpp" />
     <ClCompile Include=".\ndlargeqpdepth.cpp" />
     <ClCompile Include=".\ndmemorytest.cpp" />
-    <ClCompile Include=".\ndmrderegister.cpp" />
     <ClCompile Include=".\ndmrinvalidbuffer.cpp" />
-    <ClCompile Include=".\ndoverreadwrite.cpp" />
     <ClCompile Include=".\ndqpmaxall.cpp" />
     <ClCompile Include=".\ndreceiveflushqp.cpp" />
     <ClCompile Include=".\ndsendnoreceive.cpp" />
     <ClCompile Include=".\ndreceiveconnectorclosed.cpp" />
-    <ClCompile Include=".\ndwriteviolation.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ndmemorytest.h" />

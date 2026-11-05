@@ -7,7 +7,6 @@
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndmemorytest\ndmemorytest.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndmpic\ndmpic.vcxproj"/>
     <ProjectFile Include="$(MSBuildThisFileDirectory)ndmval\ndmval.vcxproj"/>
-    <ProjectFile Include="$(MSBuildThisFileDirectory)ndmw\ndmw.vcxproj"/>
   </ItemGroup>
   <Import Project="$(TraversalTargets)" Condition=" '$(CBTModulesRestored)' == 'true' " />
 </Project>

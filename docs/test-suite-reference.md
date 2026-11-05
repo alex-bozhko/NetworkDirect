@@ -15,15 +15,12 @@ This document provides a comprehensive overview of all example and unit test pro
   - [ndmrrate — Memory Registration Throughput](#ndmrrate--memory-registration-throughput)
   - [ndping — Send/Recv Latency (Unidirectional)](#ndping--sendrecv-latency-unidirectional)
   - [ndpingpong — Send/Recv Latency (Bidirectional)](#ndpingpong--sendrecv-latency-bidirectional)
-  - [ndrping — RDMA Read/Write Latency (Unidirectional)](#ndrping--rdma-readwrite-latency-unidirectional)
-  - [ndrpingpong — RDMA Write Latency (Bidirectional)](#ndrpingpong--rdma-write-latency-bidirectional)
   - [ndlat — Send/Recv Round-Trip Latency](#ndlat--sendrecv-round-trip-latency)
   - [ndtput — Send/Recv Throughput](#ndtput--sendrecv-throughput)
 - [Unit Tests](#unit-tests)
   - [ndcq — Completion Queue Validation](#ndcq--completion-queue-validation)
   - [ndconn — Connection Scalability](#ndconn--connection-scalability)
   - [ndmval — Memory Buffer Overflow Validation](#ndmval--memory-buffer-overflow-validation)
-  - [ndmw — Memory Window RDMA Validation](#ndmw--memory-window-rdma-validation)
   - [ndmpic — MS-MPI Connection Emulation](#ndmpic--ms-mpi-connection-emulation)
   - [ndmemorytest — Comprehensive Stress/Error Test Suite](#ndmemorytest--comprehensive-stresserror-test-suite)
 - [Shared Libraries](#shared-libraries)
@@ -302,118 +299,6 @@ ndpingpong -c -p 192.168.1.10:54325
 
 ---
 
-### ndrping — RDMA Read/Write Latency (Unidirectional)
-
-**Purpose:** Measures one-sided RDMA Read or Write latency. The server exposes a memory region; the client performs RDMA operations directly without server involvement in the data path.
-
-**Usage:**
-```
-ndrping [options] <ip>[:<port>]
-Options:
-  -s            - Start as server
-  -c            - Start as client
-  -b            - Blocking I/O
-  -p            - Polling I/O (default)
-  -w            - Use RDMA Write (default)
-  -r            - Use RDMA Read
-  -n <nSge>     - SGE count (default: 1)
-  -q <pipeline> - Pipeline limit (default: 128)
-  -l <logFile>  - Log output
-```
-
-**Defaults:**
-| Parameter | Value |
-|-----------|-------|
-| Port | 54326 |
-| Max transfer size | 4 MB |
-| Max iterations | 500,000 |
-| RDMA operation | Write |
-| Pipeline depth | 128 |
-| Completion mode | Polling |
-
-**Protocol:**
-1. **Server** registers buffer with appropriate RDMA permissions, creates memory window, binds buffer, sends PeerInfo (remote token + address) to client, then waits passively
-2. **Client** receives PeerInfo, then issues RDMA Read or Write operations in a pipelined loop using credit-based flow control
-3. **Termination:** Client sends 0-byte message; server receives and shuts down
-
-**Adapter requirement:** Must support `ND_ADAPTER_FLAG_IN_ORDER_DMA_SUPPORTED`
-
-**RDMA Read vs Write:**
-- **Write (default):** Client pushes data to server's buffer. Simpler, no server-side read limits.
-- **Read (`-r`):** Client pulls data from server's buffer. Queue depth limited by server's `MaxOutboundReadLimit`.
-
-**What it measures:**
-- Per-operation RDMA latency (µs)
-- CPU utilization
-- Throughput (Bytes/sec)
-
-**Requires:** Server + Client.
-
-**Examples:**
-```
-# RDMA Write test
-ndrping -s -p 192.168.1.10:54326
-ndrping -c -p -w 192.168.1.10:54326
-
-# RDMA Read test
-ndrping -s -p 192.168.1.10:54326
-ndrping -c -p -r 192.168.1.10:54326
-```
-
----
-
-### ndrpingpong — RDMA Write Latency (Bidirectional)
-
-**Purpose:** Measures bidirectional RDMA Write ping-pong latency. Both sides perform one-sided RDMA writes to each other's memory, synchronizing via memory content polling.
-
-**Usage:**
-```
-ndrpingpong [options] <ip>[:<port>]
-Options:
-  -s            - Start as server
-  -c            - Start as client
-  -b            - Blocking I/O
-  -p            - Polling I/O (default)
-  -n <nSge>     - SGE count (default: 1)
-  -q <pipeline> - Pipeline limit
-  -l <logFile>  - Log output
-```
-
-**Defaults:**
-| Parameter | Value |
-|-----------|-------|
-| Port | 54327 |
-| Max transfer size | 4 MB |
-| Max iterations | 100,000 |
-| Completion mode | Polling |
-
-**Protocol:**
-1. Both sides register buffers with `ALLOW_LOCAL_WRITE | ALLOW_REMOTE_WRITE`
-2. Exchange PeerInfo (remote token + address) via send/receive
-3. **Ping-pong loop:**
-   - Client writes value `'X'` to server's buffer via RDMA Write
-   - Server busy-polls its buffer for client's value, then writes `'Y'` back via RDMA Write
-   - Client busy-polls its buffer for server's value
-   - Repeat
-4. Synchronization is entirely through memory content (no explicit control messages)
-
-**Adapter requirement:** Must support `ND_ADAPTER_FLAG_IN_ORDER_DMA_SUPPORTED`
-
-**What it measures:**
-- Per-direction RDMA Write latency (round-trip / 2)
-- CPU utilization
-- Bidirectional throughput
-
-**Requires:** Server + Client.
-
-**Examples:**
-```
-ndrpingpong -s -p 192.168.1.10:54327
-ndrpingpong -c -p 192.168.1.10:54327
-```
-
----
-
 ### ndlat — Send/Recv Round-Trip Latency
 
 **Purpose:** Measures send/receive round-trip latency at a fixed message size and reports a percentile distribution. The client defines the workload and sends it to the server over a control exchange, so the server needs no workload options.
@@ -611,39 +496,6 @@ ndmval -c 192.168.1.10:54331
 
 ---
 
-### ndmw — Memory Window RDMA Validation
-
-**Purpose:** Validates RDMA operations through Memory Windows on a 64 MB buffer.
-
-**Usage:**
-```
-ndmw [options] <ip>[:<port>]
-Options:
-  -s            - Start as server
-  -c            - Start as client
-  -l <logFile>  - Log output
-```
-
-**Default port:** 54323
-
-**What it tests:**
-1. Server binds a Memory Window to a 64 MB registered buffer
-2. Exchanges remote access tokens with client
-3. Client performs RDMA Read and Write operations at various offsets
-4. Validates data integrity using bitwise NOT and reverse-order transformations
-
-**Pass criteria:** All RDMA operations succeed and buffer contents match expected transformations.
-
-**Requires:** Server + Client.
-
-**Examples:**
-```
-ndmw -s 192.168.1.10:54323
-ndmw -c 192.168.1.10:54323
-```
-
----
-
 ### ndmpic — MS-MPI Connection Emulation
 
 **Purpose:** Emulates MS-MPI's rank-based connection establishment patterns to validate complex multi-connection scenarios.
@@ -684,7 +536,7 @@ ndmpic -c 192.168.1.10 192.168.1.20
 
 ### ndmemorytest — Comprehensive Stress/Error Test Suite
 
-**Purpose:** A suite of 19 targeted test scenarios covering error handling, edge cases, and stress conditions across the NetworkDirect API surface.
+**Purpose:** A suite of 13 targeted test scenarios covering error handling, edge cases, and stress conditions across the NetworkDirect API surface.
 
 **Usage:**
 ```
@@ -712,29 +564,22 @@ Options:
 | `NdDualConnection` | Two simultaneous connections |
 | `NdDualListen` | Two simultaneous listeners |
 | `NdInvalidIP` | Invalid IP address error paths |
-| `NdInvalidRead` | Invalid RDMA Read operations |
-| `NdInvalidWrite` | Invalid RDMA Write operations |
 | `NdLargePrivateData` | Oversized connection private data |
 | `NdLargeQPDepth` | Maximum queue pair depth limits |
-| `NdMRDeregister` | Memory region deregistration while in use |
 | `NdMRInvalidBuffer` | Invalid buffer passed to memory region |
-| `NdOverRead` | RDMA Read beyond registered bounds |
-| `NdOverWrite` | RDMA Write beyond registered bounds |
 | `NdQpMax` | Queue pair creation at maximum limits |
 | `NdReceiveFlushQP` | Receive flushing on QP state change |
 | `NdSendNoReceive` | Send without matching posted receive |
 | `NdReceiveConnClosed` | Receive on a closed connection |
-| `NdWriteViolation` | Write to memory without permission |
 
-**Running all tests:** Omit `-t` to run all 19 tests sequentially.
+**Running a test:** `-t` is required; each run executes one test.
 
-**Running a specific test:**
 ```
 # Server
-ndtest -s -t NdWriteViolation 192.168.1.10:54321
+ndtest -s -t NdLargePrivateData 192.168.1.10:54321
 
 # Client
-ndtest -c -t NdWriteViolation 192.168.1.10:54321
+ndtest -c -t NdLargePrivateData 192.168.1.10:54321
 ```
 
 **Pass criteria:** Each test validates that the API returns expected error codes and handles the error condition gracefully without crashes or hangs.
@@ -771,11 +616,8 @@ Static library providing base classes for test infrastructure:
 | ndconn | 54321 |
 | ndmemorytest | 54321 |
 | ndmpic | 54322 |
-| ndmw | 54323 |
 | ndping | 54324 |
 | ndpingpong | 54325 |
-| ndrping | 54326 |
-| ndrpingpong | 54327 |
 | ndmval | 54331 |
 | ndlat | 54324 (same as ndping) |
-| ndtput | 54326 (same as ndrping) |
+| ndtput | 54326 |
