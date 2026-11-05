@@ -1,5 +1,5 @@
 //
-// Copyright(c) Microsoft Corporation.All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 //
 
@@ -25,7 +25,7 @@ inline void LogIfErrorExit(
 {
     if (result != expectedResult)
     {
-        printf("Test failed.Test Result: %#x, Expected Result:%#x, %s\n", result, expectedResult, errorMessage);
+        printf("Test failed. Test Result: %#x, Expected Result:%#x, %s\n", result, expectedResult, errorMessage);
         exit(exitCode);
     }
 }
@@ -123,7 +123,7 @@ protected:
         HRESULT expectedResult = ND_SUCCESS,
         const char* errorMessage = "IND2Adapter::CreateCompletionQueue failed");
 
-    //create copletion queue for given depth
+    //create completion queue for given depth
     void CreateCQ(
         IND2CompletionQueue **pCq,
         DWORD depth,

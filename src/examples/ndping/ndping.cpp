@@ -1,14 +1,13 @@
 //
-// Copyright(c) Microsoft Corporation.All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 //
 // ndping.cpp - NetworkDirect unidirectional send/recv ping test
 //
-// Local copy of microsoft/NetworkDirect src/examples/ndping (043f1bf), adapted
-// to the USB4 P2P receive requirements: the registered buffer is page aligned
-// with a page-multiple length, and each receive is sized for the message it
-// receives. The client also adds the credits the server returns, and each size
-// runs at most 10,000 iterations. Both sides must run this version.
+// The registered buffer is page aligned with a page-multiple length, and each
+// receive is sized for the message it receives, as the USB4 provider requires.
+// The client adds the credits the server returns, and each size runs at most
+// 10,000 iterations. Both sides must run the same version of this tool.
 //
 
 #include "ndcommon.h"

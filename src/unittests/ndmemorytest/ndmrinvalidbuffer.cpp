@@ -1,4 +1,4 @@
-// Copyright(c) Microsoft Corporation.All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 //
 // ndmrinvalidbuffer.cpp - Test register memory with buffer = nullptr(server),

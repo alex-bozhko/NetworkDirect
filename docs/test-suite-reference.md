@@ -2,7 +2,7 @@
 
 This document provides a comprehensive overview of all example and unit test projects in the NetworkDirect solution, including usage instructions, protocol details, and measurement methodology.
 
-> **Important:** All tests require real RDMA-capable hardware (no mocks/stubs). All tests accept IPv4 addresses only.
+> **Important:** All tests run against a real NetworkDirect provider, such as ndprov over a USB4 peer-to-peer link; there are no mocks or stubs. All tests accept IPv4 addresses only.
 
 ---
 
@@ -481,10 +481,10 @@ Options:
 - Client sends 1024 bytes
 - Server posts a receive with only a 1023-byte buffer
 - Validates error codes:
-  - **Client:** Expects `ND_SUCCESS` (iWARP) or `ND_REMOTE_ERROR` (InfiniBand)
+  - **Client:** Expects `ND_SUCCESS` or `STATUS_DATA_ERROR`, depending on whether the provider reports the receiver-side overflow back to the sender
   - **Server:** Expects `ND_BUFFER_OVERFLOW`
 
-**Pass criteria:** Both sides report the expected error codes for their transport type.
+**Pass criteria:** Both sides report the expected error codes.
 
 **Requires:** Server + Client.
 
@@ -540,7 +540,7 @@ ndmpic -c 192.168.1.10 192.168.1.20
 
 **Usage:**
 ```
-ndtest [options] <ip>[:<port>]
+ndmemorytest [options] <ip>[:<port>]
 Options:
   -s            - Start as server
   -c            - Start as client
@@ -576,10 +576,10 @@ Options:
 
 ```
 # Server
-ndtest -s -t NdLargePrivateData 192.168.1.10:54321
+ndmemorytest -s -t NdLargePrivateData 192.168.1.10:54321
 
 # Client
-ndtest -c -t NdLargePrivateData 192.168.1.10:54321
+ndmemorytest -c -t NdLargePrivateData 192.168.1.10:54321
 ```
 
 **Pass criteria:** Each test validates that the API returns expected error codes and handles the error condition gracefully without crashes or hangs.
@@ -621,3 +621,5 @@ Static library providing base classes for test infrastructure:
 | ndmval | 54331 |
 | ndlat | 54324 (same as ndping) |
 | ndtput | 54326 |
+
+Tools that share a default port (ndconn and ndmemorytest, ndping and ndlat) cannot run at the same time on the same address unless you pass a different port.

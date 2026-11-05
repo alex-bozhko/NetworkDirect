@@ -1,5 +1,5 @@
 //
-// Copyright(c) Microsoft Corporation.All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 //
 
@@ -468,8 +468,6 @@ void NdTestServerBase::Accept(
     //
     // Accept the connection.
     //
-    /*printf("[ACCEPT] Calling Accept(inRead=%lu, outRead=%lu, privateDataLen=%lu)...\n",
-        inboundReadLimit, outboundReadLimit, cbPrivateData);*/
     HRESULT hr = m_pConnector->Accept(
         m_pQp,
         inboundReadLimit,

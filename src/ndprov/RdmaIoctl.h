@@ -1,4 +1,5 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 //
 // Shared IOCTL definitions for the USB4 P2P RDMA device interface.

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 #include <winver.h>
 
 VS_VERSION_INFO VERSIONINFO
@@ -20,10 +23,10 @@ BEGIN
             VALUE "CompanyName", "Microsoft Corporation\0"
             VALUE "FileDescription", RC_VERSION_FILE_DESCRIPTION
             VALUE "InternalName", RC_VERSION_INTERNAL_NAME
-            VALUE "LegalCopyright", "Copyright \251 1995-2008 Microsoft Corporation\0"
+            VALUE "LegalCopyright", "\251 Microsoft Corporation. All rights reserved.\0"
             VALUE "LegalTrademarks", "Microsoft\256 is a registered trademark of Microsoft Corporation.\0"
             VALUE "OriginalFilename", RC_VERSION_ORIGINAL_FILE_NAME
-            VALUE "ProductName", "Microsoft NetworkDirect DDK"
+            VALUE "ProductName", "Microsoft NetworkDirect over USB4\0"
             VALUE "FileVersion", "1.0.0.1"
             VALUE "ProductVersion", "1.0.0.1"
         END

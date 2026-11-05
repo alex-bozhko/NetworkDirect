@@ -1,7 +1,8 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 //
-// dllmain.cpp - DLL entry points for the NetworkDirect dummy provider
+// dllmain.cpp - DLL entry points for the NetworkDirect USB4 provider
 //
 // Exports DllGetClassObject and DllCanUnloadNow as required by the
 // ndutil framework to load and instantiate the IND2Provider.

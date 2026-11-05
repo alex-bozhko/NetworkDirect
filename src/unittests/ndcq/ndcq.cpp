@@ -1,4 +1,4 @@
-// Copyright(c) Microsoft Corporation.All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 //
 // ndcq.cpp - NetworkDirect Completion Queue test

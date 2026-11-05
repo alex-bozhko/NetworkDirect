@@ -1,4 +1,4 @@
-// Copyright(c) Microsoft Corporation.All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 //
 // ndreceiveconnectorclosed.cpp - Test receive with connector closed

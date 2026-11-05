@@ -1,10 +1,14 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 //
-// ndprov_install.cpp - Registers/unregisters the ndprov dummy provider
-//                      in the Winsock catalog via WSCInstallProvider.
+// ndprov_install.cpp - Registers/unregisters the NetworkDirect USB4 provider
+//                      (ndprov.dll) in the Winsock catalog.
 //
 // Usage:
 //   ndprov_install.exe install <full_path_to_ndprov.dll>
 //   ndprov_install.exe uninstall
+//   ndprov_install.exe dump
 //
 // Must run as Administrator.
 //
@@ -15,7 +19,7 @@
 #include <initguid.h>
 
 // {1F6A4848-5D04-4C77-B96C-4AB28A39449D}
-DEFINE_GUID(CLSID_NdDummyProvider,
+DEFINE_GUID(CLSID_NdUsb4Provider,
     0x1f6a4848, 0x5d04, 0x4c77, 0xb9, 0x6c, 0x4a, 0xb2, 0x8a, 0x39, 0x44, 0x9d);
 
 
@@ -63,7 +67,7 @@ static int InstallProvider(const WCHAR* dllPath)
     protocolInfo.ProtocolChain.ChainLen = BASE_PROTOCOL;
 
     // Display name
-    wcscpy_s(protocolInfo.szProtocol, L"NetworkDirect Dummy Provider");
+    wcscpy_s(protocolInfo.szProtocol, L"NetworkDirect USB4 Provider");
 
     INT err = 0;
 
@@ -86,7 +90,7 @@ static int InstallProvider(const WCHAR* dllPath)
     FreeLibrary(hMod);
 
     // Use a mutable copy of the GUID
-    GUID guid = CLSID_NdDummyProvider;
+    GUID guid = CLSID_NdUsb4Provider;
     int ret = WSCInstallProvider64_32(
         &guid,
         dllPath,
@@ -109,7 +113,7 @@ static int InstallProvider(const WCHAR* dllPath)
 
 static int UninstallProvider()
 {
-    GUID guid = CLSID_NdDummyProvider;
+    GUID guid = CLSID_NdUsb4Provider;
     INT err = 0;
     int failed = 0;
 
@@ -210,6 +214,7 @@ int wmain(int argc, WCHAR* argv[])
         printf("Usage:\n");
         printf("  ndprov_install install <full_path_to_ndprov.dll>\n");
         printf("  ndprov_install uninstall\n");
+        printf("  ndprov_install dump\n");
         return 1;
     }
 
@@ -250,6 +255,7 @@ int wmain(int argc, WCHAR* argv[])
         printf("Usage:\n");
         printf("  ndprov_install install <full_path_to_ndprov.dll>\n");
         printf("  ndprov_install uninstall\n");
+        printf("  ndprov_install dump\n");
     }
 
     WSACleanup();

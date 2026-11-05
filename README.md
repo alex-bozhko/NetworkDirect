@@ -1,40 +1,28 @@
-# NetworkDirect SPI
+# NetworkDirect over USB4
 
-The NetworkDirect architecture provides application developers with a networking interface that enables zero-copy data transfers between applications, kernel-bypass I/O generation and completion processing, and one-sided data transfer operations. The NetworkDirect service provider interface (SPI) defines the interface that NetworkDirect providers implement to expose their hardware capabilities to applications.
+This project lets Windows PCs that are connected directly by a USB4 cable talk to each other through RDMA verbs. Applications get zero-copy transfers, kernel-bypass I/O, and one-sided operations without a dedicated RDMA network adapter. The goal is a low-latency, high-throughput interconnect that lets AI frameworks split model inference and training across several ordinary PCs.
 
-Please find additional documentation in [docs/](./docs) folder.
+The project provides `ndprov.dll`, a NetworkDirect v2 (NDv2) provider that runs on top of the USB4 P2P networking drivers built into Windows. Applications use it through the standard NetworkDirect interfaces (`IND2Provider`, `IND2Adapter`, `IND2QueuePair`, and so on). The provider currently supports two-sided send and receive operations.
 
-NetworkDirect SDK is available in [Nuget](https://www.nuget.org/packages/networkdirect) also.
+## Contents
+
+| Path | Description |
+|------|-------------|
+| `src/ndprov` | `ndprov.dll`, the NDv2 provider. |
+| `src/install` | `ndprov_install.exe`, which adds `ndprov.dll` to or removes it from the Winsock provider catalog. |
+| `src/ndutil` | NetworkDirect headers and the helper library that applications use to find and load providers. |
+| `src/examples` | `ndping`, `ndlat`, `ndtput`, and other test tools. |
+| `docs` | NetworkDirect interface reference and [test tool reference](./docs/test-suite-reference.md). |
 
 # Building
 
 ## Prerequisites
 
- - [Visial Studio 2017](https://docs.microsoft.com/visualstudio/install/install-visual-studio)
+- [Visual Studio 2022](https://visualstudio.microsoft.com/downloads/) with the **Desktop development with C++** workload.
+- Windows SDK 10.0.26100 or later.
+- The [NuGet CLI](https://learn.microsoft.com/nuget/install-nuget-client-tools), to restore packages from the command line.
 
-   Please make sure to select the following workloads during installation:
-    - .NET desktop development (required for CBT/Nuget packages)
-    - Desktop development with C++ 
-
- - [Windows SDK](https://developer.microsoft.com/windows/downloads/windows-10-sdk)
- - [Windows WDK](https://docs.microsoft.com/windows-hardware/drivers/download-the-wdk)
- 
- Based on the installed VS/SDK/WDK versions, update _VCToolsVersion_ and _WindowsTargetPlatformVersion_ in Directory.Build.props
- 
- Note that the build system uses [CommonBuildToolSet(CBT)](https://commonbuildtoolset.github.io/). You may need to unblock __CBT.core.dll__ (under .build/CBT) depending on your security configurations. Please refer to [CBT documentation](https://commonbuildtoolset.github.io/#/getting-started) for additional details.
-
-
- ## Build
- To build, open a __Native Tools Command Prompt for Visual Studio__ and  run ``msbuild`` from root folder.
-
-## Experimental features in this branch
-
-- **NetworkDirect v2 provider:** `ndprov.dll` implements the NDv2 provider interface to support RDMA over usb4 connection. It works in combination with usb4 drivers that are shipped separately.
-- **Provider management:** `ndprov_install.exe` installs, lists, and removes `ndprov.dll` from the Winsock provider catalog.
-- **Performance tools:** `ndlat.exe` measures send/receive round-trip latency percentiles and `ndtput.exe` measures multi-QP send/receive throughput.
-- **Test documentation:** [docs/test-suite-reference.md](./docs/test-suite-reference.md) describes the included examples and validation tools.
-
-### Install `ndprov.dll`
+## Build
 
 `ndprov`, `ndlat`, and `ndtput` use the [Windows Implementation Library (WIL)](https://github.com/microsoft/wil) NuGet package. Restore it before building:
 
@@ -42,18 +30,22 @@ NetworkDirect SDK is available in [Nuget](https://www.nuget.org/packages/network
 nuget restore src\netdirect.sln -PackagesDirectory packages
 ```
 
-The repo's `NuGet.Config` lists only nuget.org but keeps the feeds from your user-level config (`%APPDATA%\NuGet\NuGet.Config`). If nuget.org is unreachable from your machine, add an internal mirror there or pass `-Source <feed>`.
-
-Build the x64 provider and installer:
+Then build from a **Developer Command Prompt for Visual Studio**:
 
 ```bat
 msbuild src\netdirect.sln /m /p:Configuration=Release /p:Platform=x64
 ```
 
-Then open an **Administrator** command prompt and install the provider using an absolute DLL path:
+Binaries are written to `out\<Configuration>-<Platform>\<project>\`.
+
+# Using the provider
+
+## Install `ndprov.dll`
+
+Open an **Administrator** command prompt and install the provider using an absolute DLL path:
 
 ```bat
-out\Release-x64\ndprov_install\ndprov_install.exe install "C:\full\path\to\NetworkDirect\out\Release-x64\ndprov\ndprov.dll"
+out\Release-x64\ndprov_install\ndprov_install.exe install "C:\full\path\to\out\Release-x64\ndprov\ndprov.dll"
 ```
 
 Keep `ndprov.dll` at the registered path. To list NetworkDirect providers or remove `ndprov.dll`, run:
@@ -63,7 +55,7 @@ out\Release-x64\ndprov_install\ndprov_install.exe dump
 out\Release-x64\ndprov_install\ndprov_install.exe uninstall
 ```
 
-### Collect `ndprov.dll` traces
+## Collect `ndprov.dll` traces
 
 `ndprov.dll` logs through a TraceLogging ETW provider named `Microsoft.NetworkDirect.NdProv` (GUID `{B71AF425-C11E-54C8-BD6E-20FFB13DCADB}`). Nothing is logged unless a trace session enables it. From an elevated prompt:
 
@@ -74,7 +66,7 @@ logman stop ndprov -ets
 tracerpt ndprov.etl -o ndprov.xml -of XML -y
 ```
 
-## Setting up a USB4 test bed for RDMA
+## Set up a USB4 test bed
 
 Connecting two machines with a USB4 (Thunderbolt) cable creates a `USB4(TM) P2P Network Adapter` on each end. Before the tests will run reliably, check two things: the network profile and the IP addressing. Both cause failures that look like broken hardware but are not.
 

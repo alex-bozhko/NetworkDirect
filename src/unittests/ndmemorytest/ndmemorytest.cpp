@@ -1,5 +1,5 @@
 //
-// Copyright(c) Microsoft Corporation.All rights reserved.
+// Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 //
 
@@ -26,7 +26,7 @@ enum TestName
 
 void ShowUsage()
 {
-    printf("ndtest [options] <ip>[:<port>]\n"
+    printf("ndmemorytest [options] <ip>[:<port>]\n"
         "Options:\n"
         "\t-s            - Start as server (listen on IP/Port)\n"
         "\t-c            - Start as client (connect to server IP/Port)\n"

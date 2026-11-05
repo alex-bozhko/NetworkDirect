@@ -1,4 +1,5 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 //
 // ndprov.cpp - NetworkDirect v2 Provider backed by RDMA IOCTLs
@@ -86,6 +87,7 @@ GetProviderConfiguration()
 
 // Microsoft.NetworkDirect.NdProv
 // {B71AF425-C11E-54C8-BD6E-20FFB13DCADB}, derived from the provider name.
+// Trace consumers depend on this name and GUID; do not change them.
 TRACELOGGING_DEFINE_PROVIDER(
     g_ndprovTraceProvider,
     "Microsoft.NetworkDirect.NdProv",

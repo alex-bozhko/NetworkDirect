@@ -1,4 +1,5 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
 
 //
 // ndprov.h - NetworkDirect v2 Provider backed by RDMA IOCTLs
@@ -31,7 +32,7 @@
 #include "RdmaIoctl.h"
 
 // {1F6A4848-5D04-4C77-B96C-4AB28A39449D}
-DEFINE_GUID(CLSID_NdDummyProvider,
+DEFINE_GUID(CLSID_NdUsb4Provider,
     0x1f6a4848, 0x5d04, 0x4c77, 0xb9, 0x6c, 0x4a, 0xb2, 0x8a, 0x39, 0x44, 0x9d);
 
 #define NDPROV_MAX_QUEUE_DEPTH 1024
