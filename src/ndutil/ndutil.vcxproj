@@ -17,7 +17,7 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
-    <PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset>
+    <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -68,15 +68,15 @@ if not %rc%==1 exit %rce% else exit 0</Command>
   </ItemGroup>
 
   <ItemGroup>
-    <MessageCompile Include="ndstatus.mc">
-      <GeneratedHeaderPath>true</GeneratedHeaderPath>
-      <HeaderFilePath>$(OutIncludePath)</HeaderFilePath>
-      <GeneratedRCAndMessagesPath>true</GeneratedRCAndMessagesPath>
-      <RCFilePath>.</RCFilePath>
-    </MessageCompile>
+    <None Include="ndstatus.mc" />
   </ItemGroup>
 
-  <!-- WDK.common.props resets this configuration, so explicitly set the value -->
+  <!-- Generate ndstatus.h from ndstatus.mc with the Windows SDK message compiler -->
+  <Target Name="NdMessageCompile" BeforeTargets="ClCompile" Inputs="ndstatus.mc" Outputs="$(OutIncludePath)\ndstatus.h">
+    <MakeDir Directories="$(OutIncludePath);$(IntDir)" />
+    <Exec Command="&quot;$(WindowsSdkDir)bin\$(TargetPlatformVersion)\x64\mc.exe&quot; -h &quot;$(OutIncludePath)&quot; -r &quot;$(IntDir).&quot; ndstatus.mc" />
+  </Target>
+
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
     <ClCompile>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
