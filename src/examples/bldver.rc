@@ -3,9 +3,28 @@
 
 #include <winver.h>
 
+// Release builds set these from the git tag (see Directory.Build.targets);
+// local builds use the defaults below.
+#ifndef ND_VER_MAJOR
+#define ND_VER_MAJOR 1
+#endif
+#ifndef ND_VER_MINOR
+#define ND_VER_MINOR 0
+#endif
+#ifndef ND_VER_PATCH
+#define ND_VER_PATCH 0
+#endif
+#ifndef ND_VER_BUILD
+#define ND_VER_BUILD 1
+#endif
+
+#define ND_VER_STRINGIZE2(x) #x
+#define ND_VER_STRINGIZE(x) ND_VER_STRINGIZE2(x)
+#define ND_VER_STRING ND_VER_STRINGIZE(ND_VER_MAJOR.ND_VER_MINOR.ND_VER_PATCH.ND_VER_BUILD)
+
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,0,0,1
- PRODUCTVERSION 1,0,0,1
+ FILEVERSION ND_VER_MAJOR,ND_VER_MINOR,ND_VER_PATCH,ND_VER_BUILD
+ PRODUCTVERSION ND_VER_MAJOR,ND_VER_MINOR,ND_VER_PATCH,ND_VER_BUILD
  FILEFLAGSMASK 0x3fL
 #ifdef DEBUG
  FILEFLAGS 0x1L
@@ -27,8 +46,8 @@ BEGIN
             VALUE "LegalTrademarks", "Microsoft\256 is a registered trademark of Microsoft Corporation.\0"
             VALUE "OriginalFilename", RC_VERSION_ORIGINAL_FILE_NAME
             VALUE "ProductName", "Microsoft NetworkDirect over USB4\0"
-            VALUE "FileVersion", "1.0.0.1"
-            VALUE "ProductVersion", "1.0.0.1"
+            VALUE "FileVersion", ND_VER_STRING
+            VALUE "ProductVersion", ND_VER_STRING
         END
     END
     BLOCK "VarFileInfo"

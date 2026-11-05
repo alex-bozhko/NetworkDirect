@@ -38,6 +38,18 @@ msbuild src\netdirect.sln /m /p:Configuration=Release /p:Platform=x64
 
 Binaries are written to `out\<Configuration>-<Platform>\<project>\`.
 
+To stamp a version into the binaries, add `/p:NdVersion=<major>.<minor>.<patch>.<build>`. Without it, the binaries report version 1.0.0.1.
+
+## Releases
+
+Pushing a tag of the form `vMAJOR.MINOR.PATCH` (for example `v1.2.0`) runs the [Release workflow](.github/workflows/release.yml). It builds Release x64 and publishes a GitHub release containing:
+
+- `NetworkDirect-USB4-<version>-x64.zip`: `ndprov.dll`, `ndprov_install.exe`, the tools in `tools\`, and the tests in `tests\`.
+- `NetworkDirect-USB4-<version>-x64-symbols.zip`: the matching `.pdb` files.
+- `SHA256SUMS.txt`: checksums for both archives.
+
+A tag with a suffix, such as `v1.2.0-rc.1`, creates a prerelease. You can also run the workflow manually from the Actions tab; this uploads the archives as workflow artifacts without creating a release.
+
 # Using the provider
 
 ## Install `ndprov.dll`

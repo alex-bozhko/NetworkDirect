@@ -5,4 +5,23 @@
          Spectre libs are not installed via the VS installer. -->
     <SpectreMitigation>false</SpectreMitigation>
   </PropertyGroup>
+
+  <!--
+    Version stamped into every binary's VERSIONINFO resource (src\examples\bldver.rc).
+    Pass /p:NdVersion=<major>.<minor>.<patch>.<build> to override; otherwise bldver.rc
+    defaults apply.
+  -->
+  <PropertyGroup Condition=" '$(NdVersion)' != '' ">
+    <_NdVersionValid>$([System.Text.RegularExpressions.Regex]::IsMatch('$(NdVersion)', '^([0-9]{1,5}\.){3}[0-9]{1,5}$'))</_NdVersionValid>
+  </PropertyGroup>
+
+  <ItemDefinitionGroup Condition=" '$(_NdVersionValid)' == 'True' ">
+    <ResourceCompile>
+      <PreprocessorDefinitions>ND_VER_MAJOR=$(NdVersion.Split('.')[0]);ND_VER_MINOR=$(NdVersion.Split('.')[1]);ND_VER_PATCH=$(NdVersion.Split('.')[2]);ND_VER_BUILD=$(NdVersion.Split('.')[3]);%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+  </ItemDefinitionGroup>
+
+  <Target Name="ValidateNdVersion" BeforeTargets="PrepareForBuild" Condition=" '$(NdVersion)' != '' and '$(_NdVersionValid)' != 'True' ">
+    <Error Text="NdVersion '$(NdVersion)' must be four dot-separated numbers, e.g. 1.2.3.0." />
+  </Target>
 </Project>

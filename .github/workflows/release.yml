@@ -1,0 +1,93 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version for a test build, e.g. 1.2.3 (no release is created)'
+        required: true
+        default: '0.0.0'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2025
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+              $label = $env:GITHUB_REF_NAME -replace '^v', ''
+          } else {
+              $label = $env:INPUT_VERSION
+          }
+          if ($label -notmatch '^(\d+)\.(\d+)\.(\d+)(?:\.(\d+))?(?:-([0-9A-Za-z.-]+))?$') {
+              throw "Version '$label' is not in the form MAJOR.MINOR.PATCH[.BUILD][-suffix]"
+          }
+          $parts = 1..4 | ForEach-Object { if ($Matches[$_]) { [int]$Matches[$_] } else { 0 } }
+          if ($parts | Where-Object { $_ -gt 65535 }) {
+              throw "Each version part must be 65535 or less: '$label'"
+          }
+          $fileVersion = $parts -join '.'
+          $prerelease = [bool]$Matches[5]
+          "label=$label"             >> $env:GITHUB_OUTPUT
+          "file_version=$fileVersion" >> $env:GITHUB_OUTPUT
+          "prerelease=$($prerelease.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+          Write-Host "Version $label (file version $fileVersion, prerelease: $prerelease)"
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - uses: nuget/setup-nuget@v2
+
+      - name: Restore NuGet packages
+        run: nuget restore src\netdirect.sln -PackagesDirectory packages
+
+      - name: Build
+        run: >
+          msbuild src\netdirect.sln /m /nologo /v:minimal
+          /p:Configuration=Release /p:Platform=x64
+          /p:NdVersion=${{ steps.version.outputs.file_version }}
+
+      - name: Package
+        shell: pwsh
+        run: >
+          .github\scripts\package.ps1
+          -Version ${{ steps.version.outputs.label }}
+          -FileVersion ${{ steps.version.outputs.file_version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NetworkDirect-USB4-${{ steps.version.outputs.label }}-x64
+          path: artifacts/*
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          $files = Get-ChildItem artifacts -File | ForEach-Object FullName
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -eq 0) {
+              gh release upload $env:TAG @files --clobber
+          } else {
+              $flags = @('--verify-tag', '--generate-notes', '--title', $env:TAG)
+              if ($env:PRERELEASE -eq 'true') { $flags += '--prerelease' }
+              gh release create $env:TAG @files @flags
+          }
+          if ($LASTEXITCODE -ne 0) { throw "gh release failed with exit code $LASTEXITCODE" }
