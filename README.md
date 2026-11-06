@@ -54,17 +54,17 @@ A tag with a suffix, such as `v1.2.0-rc.1`, creates a prerelease. You can also r
 
 ## Install `ndprov.dll`
 
-Open an **Administrator** command prompt and install the provider using an absolute DLL path:
+Open an **Administrator** command prompt and install the provider using an absolute DLL path. `ndprov_install.exe` is in the root of the release zip, or in `out\Release-x64\ndprov_install\` if you built from source:
 
 ```bat
-out\Release-x64\ndprov_install\ndprov_install.exe install "C:\full\path\to\out\Release-x64\ndprov\ndprov.dll"
+ndprov_install.exe install "C:\full\path\to\ndprov.dll"
 ```
 
-Keep `ndprov.dll` at the registered path. To list NetworkDirect providers or remove `ndprov.dll`, run:
+Keep `ndprov.dll` at the registered path. To list NetworkDirect providers or remove the `ndprov.dll` registration, run:
 
 ```bat
-out\Release-x64\ndprov_install\ndprov_install.exe dump
-out\Release-x64\ndprov_install\ndprov_install.exe uninstall
+ndprov_install.exe dump
+ndprov_install.exe uninstall
 ```
 
 ## Collect `ndprov.dll` traces
@@ -94,9 +94,9 @@ So if inbound traffic fails, check the profile first. How you open it up is your
 
 ### 2. Give every link its own subnet
 
-Left alone, each adapter self-assigns a link-local address like `169.254.x.x` with a `/16` mask. Every adapter then claims the same `169.254.0.0/16` network.
+Left alone, each adapter assigns itself a link-local address like `169.254.x.x` with a `/16` mask, so every adapter claims the same `169.254.0.0/16` network.
 
-That breaks `NdResolveAddress`, which ndprov.dll uses to identify the virtual miniport to initiate RDMA verbs from. It chooses the local address by looking up a route to the peer. When several adapters cover the same range the lookup is ambiguous, so Windows returns whichever interface has the lowest metric, not the one the cable is plugged into. Traffic leaves the wrong port and the connection fails.
+If the current node has USB cables to more than one other node, this can break `NdResolveAddress`, which ndprov.dll uses to choose the virtual miniport that RDMA verbs are issued on. It picks the local address by looking up a route to the peer. Because several adapters cover the same range, the lookup is ambiguous, so Windows returns the interface with the lowest metric rather than the one the cable is plugged into. Traffic then leaves through the wrong port and the connection fails.
 
 The fix is to put each cable in its own subnet, so a peer address can match only one adapter. A `/30` is a good size: it holds exactly two usable addresses, which is all a point-to-point link needs.
 
